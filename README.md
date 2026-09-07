@@ -10,7 +10,7 @@ Product name is **Slab**. SlabDB is informal.
 - SQL: `CREATE TABLE`, `INSERT`, `SELECT`, PK, `WHERE` on one table. No JOIN, UPDATE, BEGIN, COPY.
 - Types: bool, int4, int8, text ≤ 1 KiB, timestamptz.
 - Tables: 16 in this slice (Solana inner-ix create cap is 10 KiB). 32 after a realloc ix.
-- Write-ack: Irys confirm, then write. This slice uses a fixture TXID.
+- Write-ack: Irys confirm, then write. Local tests use a fixture TXID. Live tests upload the 8 KiB page and wait for the gateway before `INSERT`.
 - Public ER before private ER.
 
 ## Routing
@@ -33,7 +33,8 @@ Product name is **Slab**. SlabDB is informal.
 
 1. `initialize` + `CREATE TABLE notes` — done. `CREATE TABLE` also inits the PK `Index` PDA.
 2. `INSERT` + `SELECT … WHERE` with fixture TXID — done. Row bytes stay off-chain. On-chain: `PagePtr` + PK `Index`. Index cap is 128 keys.
-3. Public ER — this tree. Create the table and first page on L1, delegate `Slab` + `Catalog` + `Index` + `PagePtr`, run `SELECT` on ER, commit until `catalog_root` (sha256 of catalog bytes) shows on base.
+3. Public ER — done. Create the table and first page on L1, delegate `Slab` + `Catalog` + `Index` + `PagePtr`, run `SELECT` on ER, commit until `catalog_root` (sha256 of catalog bytes) shows on base.
+4. Irys write-ack — this tree. Pack the 8 KiB page, upload, wait for the receipt and gateway bytes, then `INSERT` the 43-byte Irys id. Row bytes stay off-chain.
 
 ## Public ER tests
 
@@ -55,3 +56,15 @@ RUN_ER_TESTS=1 \
 ```
 
 The suite resolves the closest public ER validator. Do not send ER txs to `https://devnet.magicblock.app/` — that alias is not a validator RPC. Do not use `https://api.devnet.solana.com` for deploy or ER tests; that endpoint rate-limits writes. Index and PagePtr rent is paid from a system-owned `fee` vault on L1. After delegate, that vault is owned by the delegation program, so System cannot create accounts from it on the ER.
+
+## Irys tests
+
+Default `anchor test` does not upload. Live Irys is env-gated. The local validator still runs `INSERT`. Irys funding uses MagicBlock's Solana RPC.
+
+```bash
+RUN_IRYS_TESTS=1 \
+  SLAB_BASE_RPC_URL=https://rpc.magicblock.app/devnet \
+  anchor test
+```
+
+`INSERT` stores an Irys receipt id in 64 bytes, zero-padded on the right. The program rejects empty or non-ASCII ids. Fetch the page from `https://devnet.irys.xyz/<id>`.

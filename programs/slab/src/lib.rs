@@ -12,7 +12,7 @@ use solana_sha256_hasher::hash;
 use constants::{
     CAT_SEED, COL_BOOL, COL_INT4, COL_INT8, COL_TEXT, COL_TIMESTAMPTZ, FEE_RESERVE_LAMPORTS,
     FEE_SEED, IDX_SEED, MAX_COLS, MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE, MAX_TABLES, PAGE_SEED,
-    SLAB_SEED,
+    SLAB_SEED, TXID_LEN, TXID_MIN_LEN,
 };
 use error::SlabError;
 use state::{
@@ -71,7 +71,7 @@ pub struct SelectHit {
     pub rel_oid: u32,
     pub page_no: u32,
     pub slot: u16,
-    pub txid: [u8; 43],
+    pub txid: [u8; TXID_LEN],
     pub hash: [u8; 32],
 }
 
@@ -137,7 +137,7 @@ pub mod slab {
         page_no: u32,
         pk_attr: u8,
         rel_name: String,
-        txid: [u8; 43],
+        txid: [u8; TXID_LEN],
         hash: [u8; 32],
         entries: Vec<PkSlot>,
     ) -> Result<()> {
@@ -378,6 +378,22 @@ fn rel_index(catalog: &Catalog, rel_oid: u32) -> Result<usize> {
     err!(SlabError::RelationNotFound)
 }
 
+fn is_irys_txid(txid: &[u8; TXID_LEN]) -> bool {
+    let Some(last) = txid.iter().rposition(|b| *b != 0) else {
+        return false;
+    };
+    let n = last + 1;
+    if n < TXID_MIN_LEN {
+        return false;
+    }
+    txid[..n].iter().all(|b| {
+        matches!(
+            b,
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_'
+        )
+    }) && txid[n..].iter().all(|b| *b == 0)
+}
+
 fn key_eq(entry: &IndexEntry, key: &[u8; 32], key_len: u8) -> bool {
     entry.key_len == key_len && entry.key[..key_len as usize] == key[..key_len as usize]
 }
@@ -388,12 +404,12 @@ fn insert_page(
     page_no: u32,
     pk_attr: u8,
     rel_name: &str,
-    txid: [u8; 43],
+    txid: [u8; TXID_LEN],
     hash: [u8; 32],
     entries: &[PkSlot],
 ) -> Result<()> {
     require!(!entries.is_empty(), SlabError::ProgramLimitExceeded);
-    require!(txid.iter().any(|b| *b != 0), SlabError::InvalidPointer);
+    require!(is_irys_txid(&txid), SlabError::InvalidPointer);
     require!(hash.iter().any(|b| *b != 0), SlabError::InvalidPointer);
 
     let mut catalog = ctx.accounts.catalog.load_mut()?;

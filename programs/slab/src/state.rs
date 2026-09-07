@@ -1,6 +1,8 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{ATTR_NAME_LEN, MAX_COLS, MAX_INDEX_KEYS, MAX_TABLES, REL_NAME_LEN};
+use crate::constants::{
+    ATTR_NAME_LEN, MAX_COLS, MAX_INDEX_KEYS, MAX_TABLES, REL_NAME_LEN, TXID_LEN,
+};
 
 #[account]
 #[derive(InitSpace)]
@@ -62,13 +64,13 @@ impl Catalog {
     pub const SIZE: usize = 8 + core::mem::size_of::<Catalog>();
 }
 
-/// Pointer to an 8 KiB page on Arweave. Row bytes never live here.
+/// Pointer to an 8 KiB page on Irys. Row bytes never live here.
 #[account]
 #[derive(InitSpace)]
 pub struct PagePtr {
     pub rel_oid: u32,
     pub page_no: u32,
-    pub txid: [u8; 43],
+    pub txid: [u8; TXID_LEN],
     pub hash: [u8; 32],
     pub n_tuples: u16,
     pub flags: u8,

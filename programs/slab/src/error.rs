@@ -28,6 +28,6 @@ pub enum SlabError {
     RowNotFound,
     #[msg("page_no must append the heap")]
     InvalidPage,
-    #[msg("txid or content hash is empty")]
+    #[msg("txid must be a 32-64 byte Irys id, and hash must be non-zero")]
     InvalidPointer,
 }

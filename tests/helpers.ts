@@ -20,8 +20,27 @@ export function int8Key(value: bigint): { key: number[]; keyLen: number } {
   return { key: Array.from(key), keyLen: 8 };
 }
 
+const IRYS_TXID_RE = /^[A-Za-z0-9_-]{32,64}$/;
+export const TXID_LEN = 64;
+
+export function encodeIrysTxid(id: string): number[] {
+  if (!IRYS_TXID_RE.test(id)) {
+    throw new Error(
+      `Irys id must be 32-64 URL-safe ASCII bytes, got ${JSON.stringify(id)}`
+    );
+  }
+  const buf = Buffer.alloc(TXID_LEN);
+  Buffer.from(id, "ascii").copy(buf);
+  return Array.from(buf);
+}
+
+export function decodeIrysTxid(bytes: ArrayLike<number>): string {
+  return Buffer.from(Array.from(bytes)).toString("ascii").replace(/\0+$/, "");
+}
+
+/** Offline stand-in. Live tests replace this with an Irys receipt id. */
 export function fixtureTxid(): number[] {
-  return Array.from(Buffer.alloc(43, 0x61));
+  return encodeIrysTxid("a".repeat(43));
 }
 
 export function buildPage(relOid: number, pageNo: number, tuples: Buffer[]): Buffer {
