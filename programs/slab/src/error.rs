@@ -18,4 +18,16 @@ pub enum SlabError {
     InvalidIdentifier,
     #[msg("unauthorized")]
     Unauthorized,
+    #[msg("relation does not exist")]
+    RelationNotFound,
+    #[msg("relation oid must be the next catalog oid")]
+    InvalidRelOid,
+    #[msg("duplicate primary key")]
+    DuplicateKey,
+    #[msg("row not found")]
+    RowNotFound,
+    #[msg("page_no must append the heap")]
+    InvalidPage,
+    #[msg("txid or content hash is empty")]
+    InvalidPointer,
 }

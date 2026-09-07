@@ -10,7 +10,7 @@ Product name is **Slab**. SlabDB is informal.
 - SQL: `CREATE TABLE`, `INSERT`, `SELECT`, PK, `WHERE` on one table. No JOIN, UPDATE, BEGIN, COPY.
 - Types: bool, int4, int8, text ≤ 1 KiB, timestamptz.
 - Tables: 16 in this slice (Solana inner-ix create cap is 10 KiB). 32 after a realloc ix.
-- Write-ack: Irys confirm, then `exec_sql`. Not in this slice (fixture TXID later).
+- Write-ack: Irys confirm, then write. This slice uses a fixture TXID.
 - Public ER before private ER.
 
 ## Routing
@@ -19,7 +19,7 @@ Product name is **Slab**. SlabDB is informal.
 |---|---|
 | `initialize` | Base |
 | `delegate` | Base |
-| `exec_sql` | ER (`skipPreflight: true`) |
+| `exec_sql` / `exec_insert` / `exec_select` | ER (`skipPreflight: true`) |
 | `commit` / `undelegate` | ER |
 
 ## Stack
@@ -28,8 +28,7 @@ Product name is **Slab**. SlabDB is informal.
 - Agave / Solana 3.1.x, SBF platform-tools v1.52
 - Bun for TS
 
-## Slice 1 (this tree)
+## Slices
 
-`initialize` + `exec_sql` (`CREATE TABLE` only) + `delegate` / `commit` / `undelegate` compile.
-
-Local proof: create a `notes` table. No Irys. No TEE. No console.
+1. `initialize` + `CREATE TABLE notes` — done. `CREATE TABLE` also inits the PK `Index` PDA.
+2. `INSERT` + `SELECT … WHERE` with fixture TXID — this tree. Row bytes stay off-chain. On-chain: `PagePtr` + PK `Index`. Index cap is 128 keys (bytemuck `Pod` array length + 10 KiB create cap).

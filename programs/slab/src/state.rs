@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{ATTR_NAME_LEN, MAX_COLS, MAX_TABLES, REL_NAME_LEN};
+use crate::constants::{ATTR_NAME_LEN, MAX_COLS, MAX_INDEX_KEYS, MAX_TABLES, REL_NAME_LEN};
 
 #[account]
 #[derive(InitSpace)]
@@ -65,20 +65,42 @@ impl Catalog {
 #[account]
 #[derive(InitSpace)]
 pub struct PagePtr {
+    pub rel_oid: u32,
+    pub page_no: u32,
     pub txid: [u8; 43],
     pub hash: [u8; 32],
     pub n_tuples: u16,
     pub flags: u8,
+    pub bump: u8,
     pub created_slot: u64,
 }
 
-/// PK index on the PER. Spill to Arweave pages later.
-#[account]
-#[derive(InitSpace)]
+#[zero_copy]
+#[derive(Default)]
+pub struct IndexEntry {
+    pub key: [u8; 32],
+    pub page_no: u32,
+    pub slot: u16,
+    pub key_len: u8,
+    pub _pad: u8,
+}
+
+/// PK index on the PER. Cap fits the 10 KiB inner-ix create limit.
+#[account(zero_copy)]
 pub struct Index {
     pub n_keys: u16,
     pub bump: u8,
+    pub pk_attr: u8,
+    pub rel_oid: u32,
+    pub keys: [IndexEntry; MAX_INDEX_KEYS],
 }
+
+impl Index {
+    pub const SIZE: usize = 8 + core::mem::size_of::<Index>();
+}
+
+const _: () = assert!(Index::SIZE <= 10_240);
+const _: () = assert!(Catalog::SIZE <= 10_240);
 
 pub fn encode_name<const N: usize>(src: &str) -> Result<[u8; N]> {
     require!(
