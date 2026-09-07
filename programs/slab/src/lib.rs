@@ -3,13 +3,16 @@ pub mod error;
 pub mod state;
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
 
+use solana_sha256_hasher::hash;
 use constants::{
-    CAT_SEED, COL_BOOL, COL_INT4, COL_INT8, COL_TEXT, COL_TIMESTAMPTZ, IDX_SEED, MAX_COLS,
-    MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE, MAX_TABLES, PAGE_SEED, SLAB_SEED,
+    CAT_SEED, COL_BOOL, COL_INT4, COL_INT8, COL_TEXT, COL_TIMESTAMPTZ, FEE_RESERVE_LAMPORTS,
+    FEE_SEED, IDX_SEED, MAX_COLS, MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE, MAX_TABLES, PAGE_SEED,
+    SLAB_SEED,
 };
 use error::SlabError;
 use state::{
@@ -89,6 +92,24 @@ pub mod slab {
         let mut catalog = ctx.accounts.catalog.load_init()?;
         catalog.n_rels = 0;
         catalog.bump = ctx.bumps.catalog;
+        drop(catalog);
+
+        let vault_bump = [ctx.bumps.fee_vault];
+        invoke_signed(
+            &system_instruction::create_account(
+                ctx.accounts.authority.key,
+                ctx.accounts.fee_vault.key,
+                FEE_RESERVE_LAMPORTS,
+                0,
+                &anchor_lang::solana_program::system_program::ID,
+            ),
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.fee_vault.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[&[FEE_SEED, ctx.accounts.authority.key.as_ref(), ns.as_ref(), vault_bump.as_ref()]],
+        )?;
         Ok(())
     }
 
@@ -133,30 +154,55 @@ pub mod slab {
         select_pk(ctx, rel_oid, pk_attr, &pk, pk_len)
     }
 
-    pub fn delegate(ctx: Context<DelegateSlab>, ns: [u8; 32]) -> Result<()> {
+    pub fn delegate(
+        ctx: Context<DelegateSlab>,
+        ns: [u8; 32],
+        rel_oid: u32,
+        page_no: u32,
+        pk_attr: u8,
+    ) -> Result<()> {
         let authority = ctx.accounts.payer.key();
         let validator = ctx.remaining_accounts.first().map(|acc| acc.key());
+        let cfg = || DelegateConfig {
+            validator,
+            ..Default::default()
+        };
         ctx.accounts.delegate_slab(
             &ctx.accounts.payer,
             &[SLAB_SEED, authority.as_ref(), ns.as_ref()],
-            DelegateConfig {
-                validator,
-                ..Default::default()
-            },
+            cfg(),
         )?;
         let slab_key = ctx.accounts.slab.key();
         ctx.accounts.delegate_catalog(
             &ctx.accounts.payer,
             &[CAT_SEED, slab_key.as_ref()],
-            DelegateConfig {
-                validator,
-                ..Default::default()
-            },
+            cfg(),
+        )?;
+        // Index and PagePtr must exist on L1 first. A delegated fee vault is
+        // DLP-owned, so System create_account cannot run on the ER.
+        let rel_bytes = rel_oid.to_le_bytes();
+        let page_bytes = page_no.to_le_bytes();
+        let pk_bytes = [pk_attr];
+        ctx.accounts.delegate_index(
+            &ctx.accounts.payer,
+            &[IDX_SEED, slab_key.as_ref(), rel_bytes.as_ref(), pk_bytes.as_ref()],
+            cfg(),
+        )?;
+        ctx.accounts.delegate_page_ptr(
+            &ctx.accounts.payer,
+            &[
+                PAGE_SEED,
+                slab_key.as_ref(),
+                rel_bytes.as_ref(),
+                page_bytes.as_ref(),
+            ],
+            cfg(),
         )?;
         Ok(())
     }
 
     pub fn commit(ctx: Context<CommitSlab>) -> Result<()> {
+        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
         ctx.accounts.slab.exit(&crate::ID)?;
         MagicIntentBundleBuilder::new(
             ctx.accounts.payer.to_account_info(),
@@ -172,6 +218,7 @@ pub mod slab {
     }
 
     pub fn undelegate(ctx: Context<CommitSlab>) -> Result<()> {
+        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
         ctx.accounts.slab.exit(&crate::ID)?;
         MagicIntentBundleBuilder::new(
             ctx.accounts.payer.to_account_info(),
@@ -236,16 +283,89 @@ fn create_table(
         };
     }
 
-    let mut index = ctx.accounts.index.load_init()?;
-    index.n_keys = 0;
-    index.bump = ctx.bumps.index;
-    index.pk_attr = pk_attr;
-    index.rel_oid = rel_oid;
+    let slab_key = ctx.accounts.slab.key();
+    let rel_bytes = rel_oid.to_le_bytes();
+    let pk_bytes = [pk_attr];
+    let idx_bump = [ctx.bumps.index];
+    create_pda_paid_by_vault(
+        ctx.accounts.fee_vault.to_account_info(),
+        ctx.bumps.fee_vault,
+        &ctx.accounts.authority.key(),
+        &ctx.accounts.slab.ns,
+        ctx.accounts.index.to_account_info(),
+        ctx.accounts.system_program.to_account_info(),
+        Index::SIZE,
+        &[
+            IDX_SEED,
+            slab_key.as_ref(),
+            rel_bytes.as_ref(),
+            pk_bytes.as_ref(),
+            idx_bump.as_ref(),
+        ],
+    )?;
+    {
+        let mut data = ctx.accounts.index.try_borrow_mut_data()?;
+        require!(data.len() == Index::SIZE, SlabError::ProgramLimitExceeded);
+        data[..8].copy_from_slice(&Index::DISCRIMINATOR);
+        data[8..].fill(0);
+        let index: &mut Index = bytemuck::from_bytes_mut(&mut data[8..]);
+        index.n_keys = 0;
+        index.bump = ctx.bumps.index;
+        index.pk_attr = pk_attr;
+        index.rel_oid = rel_oid;
+    }
 
     let rel_idx = catalog.n_rels as usize;
     catalog.rels[rel_idx] = rel;
     catalog.n_rels += 1;
     ctx.accounts.slab.schema_version += 1;
+    Ok(())
+}
+
+/// L1 header commits to the catalog bytes last written on the ER.
+fn stamp_catalog_root(
+    slab: &mut Account<SlabAccount>,
+    catalog: &AccountLoader<Catalog>,
+) -> Result<()> {
+    let root = {
+        let info = catalog.to_account_info();
+        let data = info.data.borrow();
+        hash(&data).to_bytes()
+    };
+    slab.catalog_root = root;
+    Ok(())
+}
+
+/// Pay rent from the system-owned fee vault. Call this on L1 before delegate.
+fn create_pda_paid_by_vault<'info>(
+    vault_ai: AccountInfo<'info>,
+    vault_bump: u8,
+    authority: &Pubkey,
+    ns: &[u8; 32],
+    new_ai: AccountInfo<'info>,
+    system_program: AccountInfo<'info>,
+    space: usize,
+    new_seeds: &[&[u8]],
+) -> Result<()> {
+    require!(
+        new_ai.lamports() == 0 && new_ai.data_is_empty(),
+        SlabError::InvalidPage
+    );
+    let rent = Rent::get()?.minimum_balance(space);
+    require!(vault_ai.lamports() >= rent, SlabError::ProgramLimitExceeded);
+    let bump = [vault_bump];
+    let vault_seeds: [&[u8]; 4] = [FEE_SEED, authority.as_ref(), ns.as_ref(), &bump];
+    invoke_signed(
+        &system_instruction::create_account(
+            vault_ai.key,
+            new_ai.key,
+            rent,
+            space as u64,
+            &crate::ID,
+        ),
+        &[vault_ai, new_ai, system_program],
+        &[&vault_seeds, new_seeds],
+    )?;
     Ok(())
 }
 
@@ -329,16 +449,43 @@ fn insert_page(
         };
         index.n_keys += 1;
     }
+    drop(index);
 
-    let page = &mut ctx.accounts.page_ptr;
-    page.rel_oid = rel_oid;
-    page.page_no = page_no;
-    page.txid = txid;
-    page.hash = hash;
-    page.n_tuples = entries.len() as u16;
-    page.flags = 0;
-    page.bump = ctx.bumps.page_ptr;
-    page.created_slot = Clock::get()?.slot;
+    let slab_key = ctx.accounts.slab.key();
+    let rel_bytes = rel_oid.to_le_bytes();
+    let page_bytes = page_no.to_le_bytes();
+    let page_bump = [ctx.bumps.page_ptr];
+    create_pda_paid_by_vault(
+        ctx.accounts.fee_vault.to_account_info(),
+        ctx.bumps.fee_vault,
+        &ctx.accounts.authority.key(),
+        &ctx.accounts.slab.ns,
+        ctx.accounts.page_ptr.to_account_info(),
+        ctx.accounts.system_program.to_account_info(),
+        8 + PagePtr::INIT_SPACE,
+        &[
+            PAGE_SEED,
+            slab_key.as_ref(),
+            rel_bytes.as_ref(),
+            page_bytes.as_ref(),
+            page_bump.as_ref(),
+        ],
+    )?;
+    let page = PagePtr {
+        rel_oid,
+        page_no,
+        txid,
+        hash,
+        n_tuples: entries.len() as u16,
+        flags: 0,
+        bump: ctx.bumps.page_ptr,
+        created_slot: Clock::get()?.slot,
+    };
+    {
+        let mut data = ctx.accounts.page_ptr.try_borrow_mut_data()?;
+        let mut dst: &mut [u8] = &mut data;
+        page.try_serialize(&mut dst)?;
+    }
 
     catalog.rels[rel_i].n_pages += 1;
     catalog.rels[rel_i].n_tuples = new_tuples;
@@ -410,6 +557,13 @@ pub struct Initialize<'info> {
         bump
     )]
     pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: system-owned lamport vault; created in initialize.
+    #[account(
+        mut,
+        seeds = [FEE_SEED, authority.key().as_ref(), ns.as_ref()],
+        bump
+    )]
+    pub fee_vault: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -431,10 +585,16 @@ pub struct ExecSql<'info> {
         bump
     )]
     pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: delegated system vault; owner is DLP on ER.
     #[account(
-        init,
-        payer = authority,
-        space = Index::SIZE,
+        mut,
+        seeds = [FEE_SEED, authority.key().as_ref(), slab.ns.as_ref()],
+        bump
+    )]
+    pub fee_vault: UncheckedAccount<'info>,
+    /// CHECK: PDA created in-handler; rent is paid by the delegated fee vault.
+    #[account(
+        mut,
         seeds = [
             IDX_SEED,
             slab.key().as_ref(),
@@ -443,7 +603,7 @@ pub struct ExecSql<'info> {
         ],
         bump
     )]
-    pub index: AccountLoader<'info, Index>,
+    pub index: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -465,10 +625,16 @@ pub struct ExecInsert<'info> {
         bump
     )]
     pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: delegated system vault; owner is DLP on ER.
     #[account(
-        init,
-        payer = authority,
-        space = 8 + PagePtr::INIT_SPACE,
+        mut,
+        seeds = [FEE_SEED, authority.key().as_ref(), slab.ns.as_ref()],
+        bump
+    )]
+    pub fee_vault: UncheckedAccount<'info>,
+    /// CHECK: PDA created in-handler; rent is paid by the delegated fee vault.
+    #[account(
+        mut,
         seeds = [
             PAGE_SEED,
             slab.key().as_ref(),
@@ -477,7 +643,7 @@ pub struct ExecInsert<'info> {
         ],
         bump
     )]
-    pub page_ptr: Account<'info, PagePtr>,
+    pub page_ptr: UncheckedAccount<'info>,
     #[account(
         mut,
         seeds = [
@@ -540,6 +706,12 @@ pub struct DelegateSlab<'info> {
     /// CHECK: PDA verified by the delegate CPI via seeds.
     #[account(mut, del)]
     pub catalog: UncheckedAccount<'info>,
+    /// CHECK: PDA verified by the delegate CPI via seeds. Create on L1 first.
+    #[account(mut, del)]
+    pub index: UncheckedAccount<'info>,
+    /// CHECK: PDA verified by the delegate CPI via seeds. Create on L1 first.
+    #[account(mut, del)]
+    pub page_ptr: UncheckedAccount<'info>,
 }
 
 #[commit]

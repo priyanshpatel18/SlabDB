@@ -1,58 +1,24 @@
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { expect } from "chai";
-import { createHash } from "crypto";
 import { Slab } from "../target/types/slab";
+import {
+  PAGE_BYTES,
+  buildPage,
+  fixtureTxid,
+  int8Key,
+  noteTuple,
+  notesCreateTable,
+  nsFrom,
+  sha256,
+  u32le,
+} from "./helpers";
 
-const PAGE_BYTES = 8192;
-
-function u32le(n: number): Buffer {
-  const buf = Buffer.alloc(4);
-  buf.writeUInt32LE(n);
-  return buf;
-}
-
-function nsFrom(label: string): number[] {
-  const buf = Buffer.alloc(32);
-  Buffer.from(label).copy(buf);
-  return Array.from(buf);
-}
-
-function int8Key(value: bigint): { key: number[]; keyLen: number } {
-  const key = Buffer.alloc(32);
-  key.writeBigInt64LE(value, 0);
-  return { key: Array.from(key), keyLen: 8 };
-}
-
-function fixtureTxid(): number[] {
-  return Array.from(Buffer.alloc(43, 0x61));
-}
-
-function buildPage(relOid: number, pageNo: number, tuples: Buffer[]): Buffer {
-  const page = Buffer.alloc(PAGE_BYTES);
-  Buffer.from("SLAB").copy(page, 0);
-  page.writeUInt8(1, 4);
-  page.writeUInt32LE(relOid, 5);
-  page.writeUInt32LE(pageNo, 9);
-  page.writeUInt16LE(tuples.length, 13);
-  let off = 32;
-  for (const tuple of tuples) {
-    tuple.copy(page, off);
-    off += tuple.length;
-  }
-  return page;
-}
-
-function noteTuple(id: bigint, author: string, body: string): Buffer {
-  const buf = Buffer.alloc(8 + 2 + 32 + 2 + 64);
-  buf.writeBigInt64LE(id, 0);
-  buf.writeUInt16LE(author.length, 8);
-  Buffer.from(author).copy(buf, 10);
-  buf.writeUInt16LE(body.length, 42);
-  Buffer.from(body).copy(buf, 44);
-  return buf;
-}
-
+if (process.env.RUN_ER_TESTS === "1") {
+  describe.skip("slab", () => {
+    it("skipped when RUN_ER_TESTS=1", () => {});
+  });
+} else {
 describe("slab", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -75,6 +41,10 @@ describe("slab", () => {
     [Buffer.from("cat"), slabPda.toBuffer()],
     program.programId
   );
+  const [feeVaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("fee"), provider.wallet.publicKey.toBuffer(), Buffer.from(ns)],
+    program.programId
+  );
   const [pagePda] = anchor.web3.PublicKey.findProgramAddressSync(
     [
       Buffer.from("page"),
@@ -94,10 +64,8 @@ describe("slab", () => {
     program.programId
   );
 
-  const page = buildPage(relOid, pageNo, [
-    noteTuple(1n, "ada", "first note"),
-  ]);
-  const hash = Array.from(createHash("sha256").update(page).digest());
+  const page = buildPage(relOid, pageNo, [noteTuple(1n, "ada", "first note")]);
+  const hash = sha256(page);
   const txid = fixtureTxid();
   const pk = int8Key(1n);
 
@@ -108,25 +76,17 @@ describe("slab", () => {
         authority: provider.wallet.publicKey,
         slab: slabPda,
         catalog: catalogPda,
+        feeVault: feeVaultPda,
       })
       .rpc();
 
     await program.methods
-      .execSql(relOid, pkAttr, {
-        createTable: {
-          name: "notes",
-          columns: [
-            { name: "id", typ: { int8: {} }, notNull: true },
-            { name: "author", typ: { text: {} }, notNull: true },
-            { name: "body", typ: { text: {} }, notNull: true },
-          ],
-          pkAttr: 0,
-        },
-      })
+      .execSql(relOid, pkAttr, notesCreateTable)
       .accounts({
         authority: provider.wallet.publicKey,
         slab: slabPda,
         catalog: catalogPda,
+        feeVault: feeVaultPda,
         index: indexPda,
       })
       .rpc();
@@ -148,6 +108,7 @@ describe("slab", () => {
         authority: provider.wallet.publicKey,
         slab: slabPda,
         catalog: catalogPda,
+        feeVault: feeVaultPda,
         pagePtr: pagePda,
         index: indexPda,
       })
@@ -200,3 +161,4 @@ describe("slab", () => {
     }
   });
 });
+}

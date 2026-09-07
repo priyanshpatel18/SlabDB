@@ -7,6 +7,7 @@ use crate::constants::{ATTR_NAME_LEN, MAX_COLS, MAX_INDEX_KEYS, MAX_TABLES, REL_
 pub struct SlabAccount {
     pub authority: Pubkey,
     pub ns: [u8; 32],
+    /// sha256 of the Catalog account bytes at the last commit.
     pub catalog_root: [u8; 32],
     pub schema_version: u32,
     pub bump: u8,
