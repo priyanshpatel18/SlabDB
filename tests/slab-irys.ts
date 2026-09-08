@@ -15,7 +15,11 @@ import {
   u32le,
 } from "./helpers";
 
-if (process.env.RUN_IRYS_TESTS !== "1" || process.env.RUN_ER_TESTS === "1") {
+if (
+  process.env.RUN_IRYS_TESTS !== "1" ||
+  process.env.RUN_ER_TESTS === "1" ||
+  process.env.RUN_CRANK_TESTS === "1"
+) {
   describe.skip("slab irys", () => {
     it("requires RUN_IRYS_TESTS=1", () => {});
   });
@@ -108,12 +112,22 @@ if (process.env.RUN_IRYS_TESTS !== "1" || process.env.RUN_ER_TESTS === "1") {
         .rpc();
 
       await program.methods
+        .prepareRel(relOid, pageNo, pkAttr)
+        .accounts({
+          authority: provider.wallet.publicKey,
+          slab: slabPda,
+          feeVault: feeVaultPda,
+          index: indexPda,
+          pagePtr: pagePda,
+        })
+        .rpc();
+
+      await program.methods
         .execSql(relOid, pkAttr, notesCreateTable)
         .accounts({
           authority: provider.wallet.publicKey,
           slab: slabPda,
           catalog: catalogPda,
-          feeVault: feeVaultPda,
           index: indexPda,
         })
         .rpc();
@@ -126,7 +140,6 @@ if (process.env.RUN_IRYS_TESTS !== "1" || process.env.RUN_ER_TESTS === "1") {
           authority: provider.wallet.publicKey,
           slab: slabPda,
           catalog: catalogPda,
-          feeVault: feeVaultPda,
           pagePtr: pagePda,
           index: indexPda,
         })

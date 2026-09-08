@@ -15,8 +15,10 @@ pub const TXID_MIN_LEN: usize = 32;
 pub const REL_NAME_LEN: usize = 64;
 pub const ATTR_NAME_LEN: usize = 32;
 pub const TEXT_MAX_BYTES: usize = 1024;
-/// Extra lamports on Slab so ER inits can pay rent from a delegated PDA.
+/// Extra lamports on the fee vault so `prepare_rel` can pay Index + PagePtr rent on L1.
 pub const FEE_RESERVE_LAMPORTS: u64 = 80_000_000;
+/// Extra lamports on Slab. MagicIntent uses the delegated Slab as payer.
+pub const MAGIC_INTENT_LAMPORTS: u64 = 20_000_000;
 
 pub const COL_BOOL: u8 = 1;
 pub const COL_INT4: u8 = 2;

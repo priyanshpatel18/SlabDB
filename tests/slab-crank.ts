@@ -1,24 +1,22 @@
 import * as anchor from "@anchor-lang/core";
-import { Program } from "@anchor-lang/core";
+import { BN, Program } from "@anchor-lang/core";
 import { expect } from "chai";
-import {
-  GetCommitmentSignature,
-  MAGIC_CONTEXT_ID,
-  MAGIC_PROGRAM_ID,
-} from "@magicblock-labs/ephemeral-rollups-sdk";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Slab } from "../target/types/slab";
 import {
-  resolveErTarget,
+  MAGIC_CONTEXT_ID,
+  MAGIC_PROGRAM_ID,
   requireBaseRpc,
   requireFundedWallet,
+  resolveErTarget,
+  resolveMagicFeeVault,
   sendTx,
   waitDelegated,
   type Remaining,
 } from "./er-helpers";
 import {
   buildPage,
-  decodeIrysTxid,
+  fixtureTxid,
   int8Key,
   noteTuple,
   notesCreateTable,
@@ -28,12 +26,12 @@ import {
   u32le,
 } from "./helpers";
 
-if (process.env.RUN_ER_TESTS !== "1") {
-  describe.skip("slab public ER", () => {
-    it("requires RUN_ER_TESTS=1", () => {});
+if (process.env.RUN_CRANK_TESTS !== "1") {
+  describe.skip("slab commit crank", () => {
+    it("requires RUN_CRANK_TESTS=1", () => {});
   });
 } else {
-  describe("slab public ER", function () {
+  describe("slab commit crank", function () {
     this.timeout(1_000_000);
 
     const baseRpc = requireBaseRpc();
@@ -52,8 +50,10 @@ if (process.env.RUN_ER_TESTS !== "1") {
     let erProvider: anchor.AnchorProvider;
     let programEr: Program<Slab>;
     let remainingAccounts: Remaining[] = [];
+    let magicFeeVault: PublicKey;
+    let delegationRecord: PublicKey;
 
-    const ns = nsFrom(`er-${Date.now().toString(36)}`);
+    const ns = nsFrom(`crank-${Date.now().toString(36)}`);
     const relOid = 1;
     const pageNo = 0;
     const pkAttr = 0;
@@ -89,11 +89,12 @@ if (process.env.RUN_ER_TESTS !== "1") {
       program.programId
     );
 
-    const page = buildPage(relOid, pageNo, [noteTuple(1n, "ada", "er note")]);
+    const page = buildPage(relOid, pageNo, [
+      noteTuple(1n, "ada", "crank note"),
+    ]);
+    const hash = sha256(page);
+    const txid = fixtureTxid();
     const pk = int8Key(1n);
-    let txid: number[] = [];
-    let hash: number[] = [];
-    let irysId = "";
 
     before(async () => {
       const info = await baseProvider.connection.getAccountInfo(
@@ -124,7 +125,7 @@ if (process.env.RUN_ER_TESTS !== "1") {
       await requireFundedWallet(erProvider.connection, wallet.publicKey, "ER");
     });
 
-    it("initialize + prepare_rel on base, then delegate", async () => {
+    it("prepare on base, CREATE TABLE + INSERT on ER", async () => {
       const initTx = await program.methods
         .initialize(ns)
         .accounts({
@@ -164,12 +165,12 @@ if (process.env.RUN_ER_TESTS !== "1") {
       });
       await waitDelegated(baseProvider.connection, slabPda, "slab");
       await waitDelegated(baseProvider.connection, catalogPda, "catalog");
-      await waitDelegated(baseProvider.connection, indexPda, "index");
-      await waitDelegated(baseProvider.connection, pagePda, "page_ptr");
       await sleep(3000);
-    });
 
-    it("CREATE TABLE on ER", async () => {
+      const fees = await resolveMagicFeeVault(baseProvider.connection, slabPda);
+      magicFeeVault = fees.vault;
+      delegationRecord = fees.record;
+
       const createTx = await programEr.methods
         .execSql(relOid, pkAttr, notesCreateTable)
         .accounts({
@@ -182,24 +183,6 @@ if (process.env.RUN_ER_TESTS !== "1") {
       await sendTx(erProvider.connection, createTx, wallet.payer, "exec_sql", {
         cuLimit: 400_000,
       });
-
-      const catalogInfo = await erProvider.connection.getAccountInfo(catalogPda);
-      if (!catalogInfo) {
-        throw new Error("catalog missing on ER after CREATE TABLE");
-      }
-      const catalog = program.coder.accounts.decode<{ nRels: number }>(
-        "catalog",
-        catalogInfo.data
-      );
-      expect(catalog.nRels).to.equal(1);
-    });
-
-    it("upload page to Irys, then INSERT on ER", async () => {
-      const { uploadPage } = await import("./irys");
-      const uploaded = await uploadPage(page);
-      irysId = uploaded.id;
-      txid = uploaded.txid;
-      hash = uploaded.hash;
 
       const insertTx = await programEr.methods
         .execInsert(relOid, pageNo, pkAttr, "notes", txid, hash, [
@@ -216,84 +199,77 @@ if (process.env.RUN_ER_TESTS !== "1") {
       await sendTx(erProvider.connection, insertTx, wallet.payer, "exec_insert", {
         cuLimit: 400_000,
       });
-
-      const pageInfo = await erProvider.connection.getAccountInfo(pagePda);
-      if (!pageInfo) {
-        throw new Error("page_ptr missing on ER after INSERT");
-      }
-      const pagePtr = program.coder.accounts.decode<{
-        txid: number[] | Uint8Array;
-        nTuples: number;
-      }>("pagePtr", pageInfo.data);
-      expect(decodeIrysTxid(pagePtr.txid)).to.equal(irysId);
-      expect(pagePtr.nTuples).to.equal(1);
     });
 
-    it("SELECT on ER", async () => {
-      const selectTx = await programEr.methods
-        .execSelect(relOid, pkAttr, pk.key, pk.keyLen)
-        .accounts({
-          authority: wallet.publicKey,
-          slab: slabPda,
-          catalog: catalogPda,
-          index: indexPda,
-          pagePtr: pagePda,
+    it("crank_commit stamps catalog_root on ER and on base", async () => {
+      const scheduleTx = await programEr.methods
+        .scheduleCommitCrank({
+          taskId: new BN(Date.now()),
+          executionIntervalMillis: new BN(1000),
+          iterations: new BN(3),
         })
-        .transaction();
-      await sendTx(erProvider.connection, selectTx, wallet.payer, "exec_select");
-    });
-
-    it("commit until catalog_root shows on base", async () => {
-      const erCatalog = await erProvider.connection.getAccountInfo(catalogPda);
-      if (!erCatalog) {
-        throw new Error("catalog missing on ER before commit");
-      }
-      const expectedRoot = sha256(Buffer.from(erCatalog.data));
-
-      const commitTx = await programEr.methods
-        .commit()
         .accounts({
+          magicProgram: MAGIC_PROGRAM_ID,
           payer: wallet.publicKey,
           slab: slabPda,
           catalog: catalogPda,
-          magicProgram: MAGIC_PROGRAM_ID,
+          delegationRecord,
+          magicFeeVault,
           magicContext: MAGIC_CONTEXT_ID,
+          program: program.programId,
         })
         .transaction();
-      const erSig = await sendTx(
+      await sendTx(
         erProvider.connection,
-        commitTx,
+        scheduleTx,
         wallet.payer,
-        "commit"
+        "schedule_commit_crank"
       );
-      await GetCommitmentSignature(erSig, erProvider.connection);
 
-      let catalogRoot: number[] | null = null;
-      let nRels = -1;
-      for (let i = 0; i < 30; i++) {
-        const slabInfo = await baseProvider.connection.getAccountInfo(slabPda);
-        const catalogInfo = await baseProvider.connection.getAccountInfo(
-          catalogPda
-        );
-        if (slabInfo && catalogInfo) {
+      const erCatalog = await erProvider.connection.getAccountInfo(catalogPda);
+      if (!erCatalog) {
+        throw new Error("catalog missing on ER after schedule");
+      }
+      const expectedRoot = sha256(Buffer.from(erCatalog.data));
+
+      let erRoot: number[] | null = null;
+      for (let i = 0; i < 40; i++) {
+        const slabInfo = await erProvider.connection.getAccountInfo(slabPda);
+        if (slabInfo) {
           const slab = program.coder.accounts.decode<{
             catalogRoot: number[] | Uint8Array;
           }>("slabAccount", slabInfo.data);
-          const catalog = program.coder.accounts.decode<{ nRels: number }>(
-            "catalog",
-            catalogInfo.data
-          );
-          catalogRoot = Array.from(slab.catalogRoot);
-          nRels = catalog.nRels;
-          if (catalogRoot.some((b) => b !== 0)) {
+          erRoot = Array.from(slab.catalogRoot);
+          if (erRoot.some((b) => b !== 0)) {
             break;
           }
         }
         await sleep(500);
       }
+      expect(erRoot, "crank did not stamp catalog_root on ER").to.not.equal(
+        null
+      );
+      expect(erRoot!.some((b) => b !== 0)).to.equal(true);
+      expect(erRoot).to.deep.equal(expectedRoot);
 
-      expect(catalogRoot).to.deep.equal(expectedRoot);
-      expect(nRels).to.equal(1);
+      let baseRoot: number[] | null = null;
+      for (let i = 0; i < 60; i++) {
+        const slabInfo = await baseProvider.connection.getAccountInfo(slabPda);
+        if (slabInfo) {
+          const slab = program.coder.accounts.decode<{
+            catalogRoot: number[] | Uint8Array;
+          }>("slabAccount", slabInfo.data);
+          baseRoot = Array.from(slab.catalogRoot);
+          if (baseRoot.some((b) => b !== 0)) {
+            break;
+          }
+        }
+        await sleep(500);
+      }
+      expect(baseRoot, "crank did not commit catalog_root to base").to.not.equal(
+        null
+      );
+      expect(baseRoot).to.deep.equal(expectedRoot);
     });
   });
 }

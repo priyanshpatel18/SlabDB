@@ -30,4 +30,6 @@ pub enum SlabError {
     InvalidPage,
     #[msg("txid must be a 32-64 byte Irys id, and hash must be non-zero")]
     InvalidPointer,
+    #[msg("delegation record or magic fee vault does not match the validator")]
+    InvalidDelegationRecord,
 }

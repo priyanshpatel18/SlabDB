@@ -3,16 +3,19 @@ pub mod error;
 pub mod state;
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
+use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+use anchor_lang::solana_program::{program::invoke, program::invoke_signed, system_instruction};
 use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
+use magicblock_magic_program_api::args::ScheduleTaskArgs;
+use magicblock_magic_program_api::instruction::MagicBlockInstruction;
 
 use solana_sha256_hasher::hash;
 use constants::{
     CAT_SEED, COL_BOOL, COL_INT4, COL_INT8, COL_TEXT, COL_TIMESTAMPTZ, FEE_RESERVE_LAMPORTS,
-    FEE_SEED, IDX_SEED, MAX_COLS, MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE, MAX_TABLES, PAGE_SEED,
-    SLAB_SEED, TXID_LEN, TXID_MIN_LEN,
+    FEE_SEED, IDX_SEED, MAGIC_INTENT_LAMPORTS, MAX_COLS, MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE,
+    MAX_TABLES, PAGE_SEED, SLAB_SEED, TXID_LEN, TXID_MIN_LEN,
 };
 use error::SlabError;
 use state::{
@@ -66,6 +69,13 @@ pub struct PkSlot {
     pub slot: u16,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct ScheduleCommitArgs {
+    pub task_id: i64,
+    pub execution_interval_millis: i64,
+    pub iterations: i64,
+}
+
 #[event]
 pub struct SelectHit {
     pub rel_oid: u32,
@@ -109,6 +119,71 @@ pub mod slab {
                 ctx.accounts.system_program.to_account_info(),
             ],
             &[&[FEE_SEED, ctx.accounts.authority.key.as_ref(), ns.as_ref(), vault_bump.as_ref()]],
+        )?;
+        invoke(
+            &system_instruction::transfer(
+                ctx.accounts.authority.key,
+                &ctx.accounts.slab.key(),
+                MAGIC_INTENT_LAMPORTS,
+            ),
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.slab.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Create empty Index + PagePtr on L1 while the fee vault is system-owned.
+    /// MagicBlock examples create PDAs on L1, then mutate them on the ER.
+    pub fn prepare_rel(
+        ctx: Context<PrepareRel>,
+        rel_oid: u32,
+        page_no: u32,
+        pk_attr: u8,
+    ) -> Result<()> {
+        require!(
+            ctx.accounts.slab.authority == ctx.accounts.authority.key(),
+            SlabError::Unauthorized
+        );
+        let slab_key = ctx.accounts.slab.key();
+        let rel_bytes = rel_oid.to_le_bytes();
+        let page_bytes = page_no.to_le_bytes();
+        let pk_bytes = [pk_attr];
+        let idx_bump = [ctx.bumps.index];
+        let page_bump = [ctx.bumps.page_ptr];
+        create_pda_paid_by_vault(
+            ctx.accounts.fee_vault.to_account_info(),
+            ctx.bumps.fee_vault,
+            &ctx.accounts.authority.key(),
+            &ctx.accounts.slab.ns,
+            ctx.accounts.index.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            Index::SIZE,
+            &[
+                IDX_SEED,
+                slab_key.as_ref(),
+                rel_bytes.as_ref(),
+                pk_bytes.as_ref(),
+                idx_bump.as_ref(),
+            ],
+        )?;
+        create_pda_paid_by_vault(
+            ctx.accounts.fee_vault.to_account_info(),
+            ctx.bumps.fee_vault,
+            &ctx.accounts.authority.key(),
+            &ctx.accounts.slab.ns,
+            ctx.accounts.page_ptr.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            8 + PagePtr::INIT_SPACE,
+            &[
+                PAGE_SEED,
+                slab_key.as_ref(),
+                rel_bytes.as_ref(),
+                page_bytes.as_ref(),
+                page_bump.as_ref(),
+            ],
         )?;
         Ok(())
     }
@@ -217,6 +292,104 @@ pub mod slab {
         Ok(())
     }
 
+    /// Stamp catalog_root, then MagicIntent-commit with the delegated Slab as payer.
+    /// No user signer — Magic invokes this crank. Wallet payers fail InvalidWritableAccount.
+    pub fn crank_commit(ctx: Context<CrankCommit>) -> Result<()> {
+        let bump = ctx.accounts.slab.bump;
+        let authority = ctx.accounts.slab.authority;
+        let ns = ctx.accounts.slab.ns;
+        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
+        ctx.accounts.slab.exit(&crate::ID)?;
+
+        let delegation_record_data = ctx.accounts.delegation_record.try_borrow_data()?;
+        require!(
+            delegation_record_data.len() >= 40,
+            SlabError::InvalidDelegationRecord
+        );
+        let validator = Pubkey::try_from(&delegation_record_data[8..40])
+            .map_err(|_| error!(SlabError::InvalidDelegationRecord))?;
+        drop(delegation_record_data);
+        let (expected_fee_vault, _) = Pubkey::find_program_address(
+            &[b"magic-fee-vault", validator.as_ref()],
+            &ephemeral_rollups_sdk::id(),
+        );
+        require_keys_eq!(
+            ctx.accounts.magic_fee_vault.key(),
+            expected_fee_vault,
+            SlabError::InvalidDelegationRecord
+        );
+
+        let payer = as_signer(ctx.accounts.slab.to_account_info());
+        let bump_seed = [bump];
+        let seeds: &[&[u8]] = &[SLAB_SEED, authority.as_ref(), ns.as_ref(), bump_seed.as_ref()];
+        MagicIntentBundleBuilder::new(
+            payer,
+            ctx.accounts.magic_context.to_account_info(),
+            ctx.accounts.magic_program.to_account_info(),
+        )
+        .magic_fee_vault(ctx.accounts.magic_fee_vault.to_account_info())
+        .commit(&[
+            ctx.accounts.slab.to_account_info(),
+            ctx.accounts.catalog.to_account_info(),
+        ])
+        .build_and_invoke_signed(&[seeds])?;
+        Ok(())
+    }
+
+    /// Schedule crank_commit on the ER. Send this transaction to the ER, not L1.
+    pub fn schedule_commit_crank(
+        ctx: Context<ScheduleCommitCrank>,
+        args: ScheduleCommitArgs,
+    ) -> Result<()> {
+        require!(
+            ctx.accounts.slab.authority == ctx.accounts.payer.key(),
+            SlabError::Unauthorized
+        );
+        let commit_ix = Instruction {
+            program_id: crate::ID,
+            accounts: vec![
+                AccountMeta::new(ctx.accounts.slab.key(), false),
+                AccountMeta::new(ctx.accounts.catalog.key(), false),
+                AccountMeta::new_readonly(ctx.accounts.delegation_record.key(), false),
+                AccountMeta::new(ctx.accounts.magic_fee_vault.key(), false),
+                AccountMeta::new_readonly(ctx.accounts.magic_program.key(), false),
+                AccountMeta::new(ctx.accounts.magic_context.key(), false),
+            ],
+            data: anchor_lang::InstructionData::data(&crate::instruction::CrankCommit {}),
+        };
+        let schedule_ix = Instruction::new_with_bincode(
+            ctx.accounts.magic_program.key(),
+            &MagicBlockInstruction::ScheduleTask(ScheduleTaskArgs {
+                task_id: args.task_id,
+                execution_interval_millis: args.execution_interval_millis,
+                iterations: args.iterations,
+                instructions: vec![commit_ix],
+            }),
+            vec![
+                AccountMeta::new(ctx.accounts.payer.key(), true),
+                AccountMeta::new(ctx.accounts.slab.key(), false),
+                AccountMeta::new(ctx.accounts.catalog.key(), false),
+                AccountMeta::new_readonly(ctx.accounts.delegation_record.key(), false),
+                AccountMeta::new(ctx.accounts.magic_fee_vault.key(), false),
+                AccountMeta::new_readonly(ctx.accounts.magic_program.key(), false),
+                AccountMeta::new(ctx.accounts.magic_context.key(), false),
+            ],
+        );
+        invoke(
+            &schedule_ix,
+            &[
+                ctx.accounts.payer.to_account_info(),
+                ctx.accounts.slab.to_account_info(),
+                ctx.accounts.catalog.to_account_info(),
+                ctx.accounts.delegation_record.to_account_info(),
+                ctx.accounts.magic_fee_vault.to_account_info(),
+                ctx.accounts.magic_program.to_account_info(),
+                ctx.accounts.magic_context.to_account_info(),
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn undelegate(ctx: Context<CommitSlab>) -> Result<()> {
         stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
         ctx.accounts.slab.exit(&crate::ID)?;
@@ -283,26 +456,7 @@ fn create_table(
         };
     }
 
-    let slab_key = ctx.accounts.slab.key();
-    let rel_bytes = rel_oid.to_le_bytes();
-    let pk_bytes = [pk_attr];
-    let idx_bump = [ctx.bumps.index];
-    create_pda_paid_by_vault(
-        ctx.accounts.fee_vault.to_account_info(),
-        ctx.bumps.fee_vault,
-        &ctx.accounts.authority.key(),
-        &ctx.accounts.slab.ns,
-        ctx.accounts.index.to_account_info(),
-        ctx.accounts.system_program.to_account_info(),
-        Index::SIZE,
-        &[
-            IDX_SEED,
-            slab_key.as_ref(),
-            rel_bytes.as_ref(),
-            pk_bytes.as_ref(),
-            idx_bump.as_ref(),
-        ],
-    )?;
+    require_prepared_pda(&ctx.accounts.index.to_account_info(), Index::SIZE)?;
     {
         let mut data = ctx.accounts.index.try_borrow_mut_data()?;
         require!(data.len() == Index::SIZE, SlabError::ProgramLimitExceeded);
@@ -367,6 +521,21 @@ fn create_pda_paid_by_vault<'info>(
         &[&vault_seeds, new_seeds],
     )?;
     Ok(())
+}
+
+fn require_prepared_pda(ai: &AccountInfo, space: usize) -> Result<()> {
+    require!(ai.data_len() == space, SlabError::InvalidPage);
+    require!(*ai.owner == crate::ID, SlabError::InvalidPage);
+    Ok(())
+}
+
+/// Workaround: MagicIntentBundleBuilder copies `is_signer` from AccountInfo.
+/// A crank PDA arrives with is_signer=false. Seeds make the CPI valid.
+fn as_signer<'info>(signer: AccountInfo<'info>) -> AccountInfo<'info> {
+    AccountInfo {
+        is_signer: true,
+        ..signer
+    }
 }
 
 fn rel_index(catalog: &Catalog, rel_oid: u32) -> Result<usize> {
@@ -467,25 +636,9 @@ fn insert_page(
     }
     drop(index);
 
-    let slab_key = ctx.accounts.slab.key();
-    let rel_bytes = rel_oid.to_le_bytes();
-    let page_bytes = page_no.to_le_bytes();
-    let page_bump = [ctx.bumps.page_ptr];
-    create_pda_paid_by_vault(
-        ctx.accounts.fee_vault.to_account_info(),
-        ctx.bumps.fee_vault,
-        &ctx.accounts.authority.key(),
-        &ctx.accounts.slab.ns,
-        ctx.accounts.page_ptr.to_account_info(),
-        ctx.accounts.system_program.to_account_info(),
+    require_prepared_pda(
+        &ctx.accounts.page_ptr.to_account_info(),
         8 + PagePtr::INIT_SPACE,
-        &[
-            PAGE_SEED,
-            slab_key.as_ref(),
-            rel_bytes.as_ref(),
-            page_bytes.as_ref(),
-            page_bump.as_ref(),
-        ],
     )?;
     let page = PagePtr {
         rel_oid,
@@ -584,31 +737,23 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(rel_oid: u32, pk_attr: u8)]
-pub struct ExecSql<'info> {
-    #[account(mut)]
+#[instruction(rel_oid: u32, page_no: u32, pk_attr: u8)]
+pub struct PrepareRel<'info> {
     pub authority: Signer<'info>,
     #[account(
-        mut,
         seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
         bump = slab.bump,
         has_one = authority @ SlabError::Unauthorized
     )]
     pub slab: Account<'info, SlabAccount>,
-    #[account(
-        mut,
-        seeds = [CAT_SEED, slab.key().as_ref()],
-        bump
-    )]
-    pub catalog: AccountLoader<'info, Catalog>,
-    /// CHECK: delegated system vault; owner is DLP on ER.
+    /// CHECK: system-owned lamport vault. Must still be system-owned (L1, before delegate).
     #[account(
         mut,
         seeds = [FEE_SEED, authority.key().as_ref(), slab.ns.as_ref()],
         bump
     )]
     pub fee_vault: UncheckedAccount<'info>,
-    /// CHECK: PDA created in-handler; rent is paid by the delegated fee vault.
+    /// CHECK: empty Index PDA created here.
     #[account(
         mut,
         seeds = [
@@ -620,13 +765,24 @@ pub struct ExecSql<'info> {
         bump
     )]
     pub index: UncheckedAccount<'info>,
+    /// CHECK: empty PagePtr PDA created here.
+    #[account(
+        mut,
+        seeds = [
+            PAGE_SEED,
+            slab.key().as_ref(),
+            &rel_oid.to_le_bytes(),
+            &page_no.to_le_bytes()
+        ],
+        bump
+    )]
+    pub page_ptr: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-#[instruction(rel_oid: u32, page_no: u32, pk_attr: u8)]
-pub struct ExecInsert<'info> {
-    #[account(mut)]
+#[instruction(rel_oid: u32, pk_attr: u8)]
+pub struct ExecSql<'info> {
     pub authority: Signer<'info>,
     #[account(
         mut,
@@ -641,14 +797,38 @@ pub struct ExecInsert<'info> {
         bump
     )]
     pub catalog: AccountLoader<'info, Catalog>,
-    /// CHECK: delegated system vault; owner is DLP on ER.
+    /// CHECK: Index PDA from prepare_rel. Mutated here, never created here.
     #[account(
         mut,
-        seeds = [FEE_SEED, authority.key().as_ref(), slab.ns.as_ref()],
+        seeds = [
+            IDX_SEED,
+            slab.key().as_ref(),
+            &rel_oid.to_le_bytes(),
+            &[pk_attr]
+        ],
         bump
     )]
-    pub fee_vault: UncheckedAccount<'info>,
-    /// CHECK: PDA created in-handler; rent is paid by the delegated fee vault.
+    pub index: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(rel_oid: u32, page_no: u32, pk_attr: u8)]
+pub struct ExecInsert<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        has_one = authority @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    #[account(
+        mut,
+        seeds = [CAT_SEED, slab.key().as_ref()],
+        bump
+    )]
+    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: PagePtr PDA from prepare_rel. Mutated here, never created here.
     #[account(
         mut,
         seeds = [
@@ -671,7 +851,6 @@ pub struct ExecInsert<'info> {
         bump
     )]
     pub index: AccountLoader<'info, Index>,
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -748,4 +927,61 @@ pub struct CommitSlab<'info> {
         bump
     )]
     pub catalog: AccountLoader<'info, Catalog>,
+}
+
+/// Crank path: Magic invokes this with no user signature.
+/// #[commit] adds magic_program + magic_context.
+#[commit]
+#[derive(Accounts)]
+pub struct CrankCommit<'info> {
+    #[account(
+        mut,
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    #[account(
+        mut,
+        seeds = [CAT_SEED, slab.key().as_ref()],
+        bump
+    )]
+    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: slab delegation record; bytes [8..40] are the validator.
+    #[account(address = ephemeral_rollups_sdk::pda::delegation_record_pda_from_delegated_account(&slab.key()))]
+    pub delegation_record: UncheckedAccount<'info>,
+    /// CHECK: Magic fee vault of the delegating validator. Required when payer is delegated.
+    #[account(mut)]
+    pub magic_fee_vault: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ScheduleCommitCrank<'info> {
+    /// CHECK: Magic program. CPI target for ScheduleTask.
+    pub magic_program: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        constraint = slab.authority == payer.key() @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    #[account(
+        mut,
+        seeds = [CAT_SEED, slab.key().as_ref()],
+        bump
+    )]
+    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: slab delegation record; forwarded into crank_commit.
+    #[account(address = ephemeral_rollups_sdk::pda::delegation_record_pda_from_delegated_account(&slab.key()))]
+    pub delegation_record: UncheckedAccount<'info>,
+    /// CHECK: Magic fee vault of the delegating validator.
+    #[account(mut)]
+    pub magic_fee_vault: UncheckedAccount<'info>,
+    /// CHECK: Magic context. crank_commit MagicIntent writes it.
+    #[account(mut, address = ephemeral_rollups_sdk::consts::MAGIC_CONTEXT_ID)]
+    pub magic_context: UncheckedAccount<'info>,
+    /// CHECK: this program. Required by the Magic schedule CPI.
+    pub program: UncheckedAccount<'info>,
 }

@@ -1,8 +1,7 @@
 import { readFileSync } from "fs";
 import { homedir } from "os";
-import { PAGE_BYTES, encodeIrysTxid, sha256, sleep } from "./helpers";
+import { PAGE_BYTES, DEFAULT_DEVNET_RPC, encodeIrysTxid, sha256, sleep } from "./helpers";
 
-const DEFAULT_RPC = "https://rpc.magicblock.app/devnet";
 const DEFAULT_GATEWAY = "https://devnet.irys.xyz";
 
 export type UploadedPage = {
@@ -51,7 +50,7 @@ export async function uploadPage(page: Buffer): Promise<UploadedPage> {
   const { Solana } = await import("@irys/upload-solana");
 
   const rpc =
-    process.env.IRYS_RPC_URL || process.env.SLAB_BASE_RPC_URL || DEFAULT_RPC;
+    process.env.IRYS_RPC_URL || process.env.SLAB_BASE_RPC_URL || DEFAULT_DEVNET_RPC;
   const irys = await Uploader(Solana)
     .withWallet(loadSecretKey())
     .withRpc(rpc)
