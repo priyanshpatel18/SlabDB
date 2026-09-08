@@ -191,5 +191,143 @@ describe("slab", () => {
       expect(String(err)).to.match(/RowNotFound|row not found/i);
     }
   });
+
+  it("INSERT appends a second row on the same page", async () => {
+    const page2 = buildPage(relOid, pageNo, [
+      noteTuple(1n, "ada", "first note"),
+      noteTuple(2n, "bob", "second note"),
+    ]);
+    const hash2 = sha256(page2);
+    const pk2 = int8Key(2n);
+    await program.methods
+      .execInsert(relOid, pageNo, pkAttr, "notes", txid, hash2, [
+        { key: pk2.key, keyLen: pk2.keyLen, slot: 1 },
+      ])
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        catalog: catalogPda,
+        pagePtr: pagePda,
+        index: indexPda,
+      })
+      .rpc();
+
+    const pagePtr = await program.account.pagePtr.fetch(pagePda);
+    const catalog = await program.account.catalog.fetch(catalogPda);
+    expect(pagePtr.nTuples).to.equal(2);
+    expect(catalog.rels[0].nPages).to.equal(1);
+    expect(catalog.rels[0].nTuples).to.equal(2);
+  });
+
+  it("INSERT a second page after prepare_page", async () => {
+    const pageNo1 = 1;
+    const [pagePda1] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("page"),
+        slabPda.toBuffer(),
+        u32le(relOid),
+        u32le(pageNo1),
+      ],
+      program.programId
+    );
+    await program.methods
+      .preparePage(relOid, pageNo1)
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        feeVault: feeVaultPda,
+        pagePtr: pagePda1,
+      })
+      .rpc();
+
+    const packed = buildPage(relOid, pageNo1, [
+      noteTuple(3n, "cam", "page two"),
+    ]);
+    const hash1 = sha256(packed);
+    const pk3 = int8Key(3n);
+    await program.methods
+      .execInsert(relOid, pageNo1, pkAttr, "notes", txid, hash1, [
+        { key: pk3.key, keyLen: pk3.keyLen, slot: 0 },
+      ])
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        catalog: catalogPda,
+        pagePtr: pagePda1,
+        index: indexPda,
+      })
+      .rpc();
+
+    const catalog = await program.account.catalog.fetch(catalogPda);
+    const pagePtr = await program.account.pagePtr.fetch(pagePda1);
+    expect(catalog.rels[0].nPages).to.equal(2);
+    expect(catalog.rels[0].nTuples).to.equal(3);
+    expect(pagePtr.nTuples).to.equal(1);
+    expect(pagePtr.pageNo).to.equal(pageNo1);
+  });
+
+  it("CREATE TABLE a second relation with prepare_index + prepare_page", async () => {
+    const relOid2 = 2;
+    const pkAttr2 = 0;
+    const [index2] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("idx"),
+        slabPda.toBuffer(),
+        u32le(relOid2),
+        Buffer.from([pkAttr2]),
+      ],
+      program.programId
+    );
+    const [page2] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("page"),
+        slabPda.toBuffer(),
+        u32le(relOid2),
+        u32le(0),
+      ],
+      program.programId
+    );
+    await program.methods
+      .prepareIndex(relOid2, pkAttr2)
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        feeVault: feeVaultPda,
+        index: index2,
+      })
+      .rpc();
+    await program.methods
+      .preparePage(relOid2, 0)
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        feeVault: feeVaultPda,
+        pagePtr: page2,
+      })
+      .rpc();
+    await program.methods
+      .execSql(relOid2, pkAttr2, {
+        createTable: {
+          name: "flags",
+          columns: [
+            { name: "ok", typ: { bool: {} }, notNull: true },
+            { name: "n", typ: { int4: {} }, notNull: true },
+            { name: "ts", typ: { timestamptz: {} }, notNull: true },
+          ],
+          pkAttr: 0,
+        },
+      })
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        catalog: catalogPda,
+        index: index2,
+      })
+      .rpc();
+
+    const catalog = await program.account.catalog.fetch(catalogPda);
+    expect(catalog.nRels).to.equal(2);
+    expect(catalog.rels[1].nAttrs).to.equal(3);
+  });
 });
 }

@@ -1,6 +1,6 @@
 # Slab
 
-On-chain SQL catalog for MagicBlock. Pay Arweave once for row pages. Pointers, indexes, and query logic run on a Private Ephemeral Rollup. Solana L1 only does init, delegate, and commit.
+On-chain SQL catalog for MagicBlock. Pay Arweave once for row pages. Pointers, indexes, and query logic run on an Ephemeral Rollup. Solana L1 only does init, prepare, delegate, and commit.
 
 Product name is **Slab**. SlabDB is informal.
 
@@ -13,16 +13,35 @@ Product name is **Slab**. SlabDB is informal.
 - Write-ack: Irys confirm, then write. Local tests use a fixture TXID. Live tests upload the 8 KiB page and wait for the gateway before `INSERT`.
 - Public ER before private ER.
 
+## Client
+
+`client/` is a small SQL proxy. It parses Postgres text, packs 8 KiB pages, uploads them (memory store or Irys), and calls the program.
+
+```ts
+import { MemoryPageStore, SlabDb } from "./client";
+
+const db = new SlabDb({ program, wallet, ns, store: new MemoryPageStore() });
+await db.exec("CREATE TABLE notes (id int8 PRIMARY KEY, author text NOT NULL, body text NOT NULL)");
+await db.exec("INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'first note')");
+const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
+```
+
+`INSERT` writes one row. If the current page is full, the client calls `prepare_page` for the next page. `SELECT` returns decoded rows. `WHERE` on the PK uses the on-chain index. `WHERE` on another column scans pages in the store.
+
+The program never sees SQL text. It receives `SqlStmt`, page pointers, and index keys.
+
 ## Routing
 
 | Instruction | Connection |
 |---|---|
 | `initialize` | Base |
-| `prepare_rel` | Base (creates empty Index + PagePtr while the fee vault is system-owned) |
-| `delegate` | Base |
+| `prepare_rel` | Base. First-table helper: Index + one PagePtr. Fee vault stays system-owned. |
+| `prepare_index` / `prepare_page` | Base. Extra tables and extra pages. Works after Slab is delegated (fee vault stays on L1). |
+| `delegate` | Base. First shot: slab + catalog + one Index + one PagePtr. |
+| `delegate_index` / `delegate_page` | Base. Extra PDAs after the first delegate. Does not re-delegate Slab or Catalog. |
 | `exec_sql` / `exec_insert` | ER after delegate (`skipPreflight: true`). Local tests run these on the validator. |
 | `exec_select` | ER (`skipPreflight: true`) |
-| `commit` / `undelegate` | ER |
+| `commit` / `undelegate` | ER. Pass extra Index and PagePtr as `remainingAccounts` so MagicIntent commits them. |
 | `schedule_commit_crank` | ER (`skipPreflight: true`) |
 | `crank_commit` | ER (Magic invokes; no user signer). Uses the delegated Slab as MagicIntent payer plus the validator `magic_fee_vault`. |
 
@@ -35,10 +54,11 @@ Product name is **Slab**. SlabDB is informal.
 ## Slices
 
 1. `initialize` + `CREATE TABLE notes` — done. `CREATE TABLE` also inits the PK `Index` PDA.
-2. `INSERT` + `SELECT … WHERE` with fixture TXID — done. Row bytes stay off-chain. On-chain: `PagePtr` + PK `Index`. Index cap is 128 keys.
-3. Public ER — this tree. `prepare_rel` on L1, delegate, then `CREATE TABLE` and `INSERT` on the public ER. Upload the 8 KiB page to Irys before `INSERT`. Signed `commit` still pushes `catalog_root` to base.
+2. `INSERT` + `SELECT … WHERE` with fixture TXID — done. Row bytes stay off-chain. On-chain: `PagePtr` + PK `Index`. Index cap is 128 keys. A second `INSERT` on the same page updates the pointer. A full page uses `prepare_page` for page 1, 2, …
+3. Public ER — this tree. `prepare_*` on L1, delegate, then `CREATE TABLE` and `INSERT` on the public ER. Upload the 8 KiB page to Irys before `INSERT`. Signed `commit` still pushes `catalog_root` to base.
 4. Irys write-ack — done. Pack the 8 KiB page, upload, wait for the receipt and gateway bytes, then `INSERT` the Irys id. Row bytes stay off-chain. The public ER suite uses a live Irys id.
 5. Commit crank — this tree. Schedule `crank_commit` on the public ER. Magic stamps `catalog_root` and MagicIntent-commits it to base. The crank uses the delegated Slab as payer (see `rewards-delegated-vrf`).
+6. SQL client — this tree. `client/` parses the v0 subset, packs typed pages (bool, int4, int8, text, timestamptz), and returns SELECT rows.
 
 ## Public ER tests
 
@@ -57,7 +77,7 @@ RUN_ER_TESTS=1 \
   anchor test --skip-local-validator --skip-deploy
 ```
 
-The suite resolves the closest public ER validator. Do not send ER txs to `https://devnet.magicblock.app/` — that alias is not a validator RPC. Do not use `https://api.devnet.solana.com`. `prepare_rel` pays Index and PagePtr rent from a system-owned `fee` vault on L1. After delegate, `CREATE TABLE` and `INSERT` only write those PDAs. They do not call System.
+The suite resolves the closest public ER validator. Do not send ER txs to `https://devnet.magicblock.app/` — that alias is not a validator RPC. Do not use `https://api.devnet.solana.com`. `prepare_index` and `prepare_page` pay rent from a system-owned `fee` vault on L1. After delegate, `CREATE TABLE` and `INSERT` only write those PDAs. They do not call System. A second table or a second page is `prepare_*` on L1, then `delegate_index` / `delegate_page`, then `exec_*` on the ER.
 
 ## Irys tests
 
@@ -68,7 +88,7 @@ RUN_IRYS_TESTS=1 \
   anchor test
 ```
 
-`INSERT` stores an Irys receipt id in 64 bytes, zero-padded on the right. The program rejects empty or non-ASCII ids. Fetch the page from `https://devnet.irys.xyz/<id>`.
+`INSERT` stores an Irys receipt id in 64 bytes, zero-padded on the right. The program rejects empty or non-ASCII ids. Fetch the page from `https://devnet.irys.xyz/<id>`. `client/store.ts` `IrysPageStore` is the same path for `SlabDb`.
 
 ## Commit crank tests
 

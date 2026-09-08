@@ -243,6 +243,131 @@ if (process.env.RUN_ER_TESTS !== "1") {
       await sendTx(erProvider.connection, selectTx, wallet.payer, "exec_select");
     });
 
+    it("prepare + delegate a second table after Slab is on the ER", async () => {
+      const relOid2 = 2;
+      const pkAttr2 = 0;
+      const [index2] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("idx"),
+          slabPda.toBuffer(),
+          u32le(relOid2),
+          Buffer.from([pkAttr2]),
+        ],
+        program.programId
+      );
+      const [page2] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("page"),
+          slabPda.toBuffer(),
+          u32le(relOid2),
+          u32le(0),
+        ],
+        program.programId
+      );
+
+      const prepIdx = await program.methods
+        .prepareIndex(relOid2, pkAttr2)
+        .accounts({
+          authority: wallet.publicKey,
+          slab: slabPda,
+          feeVault: feeVaultPda,
+          index: index2,
+        })
+        .transaction();
+      await sendTx(
+        baseProvider.connection,
+        prepIdx,
+        wallet.payer,
+        "prepare_index"
+      );
+
+      const prepPage = await program.methods
+        .preparePage(relOid2, 0)
+        .accounts({
+          authority: wallet.publicKey,
+          slab: slabPda,
+          feeVault: feeVaultPda,
+          pagePtr: page2,
+        })
+        .transaction();
+      await sendTx(
+        baseProvider.connection,
+        prepPage,
+        wallet.payer,
+        "prepare_page"
+      );
+
+      const delIdx = await program.methods
+        .delegateIndex(relOid2, pkAttr2)
+        .accounts({
+          payer: wallet.publicKey,
+          slab: slabPda,
+          index: index2,
+        })
+        .remainingAccounts(remainingAccounts)
+        .transaction();
+      await sendTx(
+        baseProvider.connection,
+        delIdx,
+        wallet.payer,
+        "delegate_index",
+        { cuLimit: 400_000 }
+      );
+      await waitDelegated(baseProvider.connection, index2, "index2");
+
+      const delPage = await program.methods
+        .delegatePage(relOid2, 0)
+        .accounts({
+          payer: wallet.publicKey,
+          slab: slabPda,
+          pagePtr: page2,
+        })
+        .remainingAccounts(remainingAccounts)
+        .transaction();
+      await sendTx(
+        baseProvider.connection,
+        delPage,
+        wallet.payer,
+        "delegate_page",
+        { cuLimit: 400_000 }
+      );
+      await waitDelegated(baseProvider.connection, page2, "page2");
+      await sleep(3000);
+
+      const createTx = await programEr.methods
+        .execSql(relOid2, pkAttr2, {
+          createTable: {
+            name: "flags",
+            columns: [
+              { name: "ok", typ: { bool: {} }, notNull: true },
+              { name: "n", typ: { int4: {} }, notNull: true },
+              { name: "ts", typ: { timestamptz: {} }, notNull: true },
+            ],
+            pkAttr: 0,
+          },
+        })
+        .accounts({
+          authority: wallet.publicKey,
+          slab: slabPda,
+          catalog: catalogPda,
+          index: index2,
+        })
+        .transaction();
+      await sendTx(erProvider.connection, createTx, wallet.payer, "exec_sql flags", {
+        cuLimit: 400_000,
+      });
+
+      const catalogInfo = await erProvider.connection.getAccountInfo(catalogPda);
+      if (!catalogInfo) {
+        throw new Error("catalog missing on ER after second CREATE TABLE");
+      }
+      const catalog = program.coder.accounts.decode<{ nRels: number }>(
+        "catalog",
+        catalogInfo.data
+      );
+      expect(catalog.nRels).to.equal(2);
+    });
+
     it("commit until catalog_root shows on base", async () => {
       const erCatalog = await erProvider.connection.getAccountInfo(catalogPda);
       if (!erCatalog) {
@@ -293,7 +418,7 @@ if (process.env.RUN_ER_TESTS !== "1") {
       }
 
       expect(catalogRoot).to.deep.equal(expectedRoot);
-      expect(nRels).to.equal(1);
+      expect(nRels).to.equal(2);
     });
   });
 }

@@ -135,18 +135,82 @@ pub mod slab {
         Ok(())
     }
 
-    /// Create empty Index + PagePtr on L1 while the fee vault is system-owned.
-    /// MagicBlock examples create PDAs on L1, then mutate them on the ER.
+    /// Create an empty Index PDA on L1. Slab may already be DLP-owned.
+    pub fn prepare_index(ctx: Context<PrepareIndex>, rel_oid: u32, pk_attr: u8) -> Result<()> {
+        let (ns, _) = load_slab_ignore_owner(
+            &ctx.accounts.slab.to_account_info(),
+            ctx.accounts.authority.key,
+        )?;
+        let vault_bump = require_fee_vault(
+            &ctx.accounts.fee_vault.to_account_info(),
+            ctx.accounts.authority.key,
+            &ns,
+        )?;
+        let slab_key = ctx.accounts.slab.key();
+        let rel_bytes = rel_oid.to_le_bytes();
+        let pk_bytes = [pk_attr];
+        let idx_bump = [ctx.bumps.index];
+        create_pda_paid_by_vault(
+            ctx.accounts.fee_vault.to_account_info(),
+            vault_bump,
+            ctx.accounts.authority.key,
+            &ns,
+            ctx.accounts.index.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            Index::SIZE,
+            &[
+                IDX_SEED,
+                slab_key.as_ref(),
+                rel_bytes.as_ref(),
+                pk_bytes.as_ref(),
+                idx_bump.as_ref(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Create an empty PagePtr PDA on L1. Call again for page_no 1, 2, …
+    /// Slab may already be DLP-owned.
+    pub fn prepare_page(ctx: Context<PreparePage>, rel_oid: u32, page_no: u32) -> Result<()> {
+        let (ns, _) = load_slab_ignore_owner(
+            &ctx.accounts.slab.to_account_info(),
+            ctx.accounts.authority.key,
+        )?;
+        let vault_bump = require_fee_vault(
+            &ctx.accounts.fee_vault.to_account_info(),
+            ctx.accounts.authority.key,
+            &ns,
+        )?;
+        let slab_key = ctx.accounts.slab.key();
+        let rel_bytes = rel_oid.to_le_bytes();
+        let page_bytes = page_no.to_le_bytes();
+        let page_bump = [ctx.bumps.page_ptr];
+        create_pda_paid_by_vault(
+            ctx.accounts.fee_vault.to_account_info(),
+            vault_bump,
+            ctx.accounts.authority.key,
+            &ns,
+            ctx.accounts.page_ptr.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            8 + PagePtr::INIT_SPACE,
+            &[
+                PAGE_SEED,
+                slab_key.as_ref(),
+                rel_bytes.as_ref(),
+                page_bytes.as_ref(),
+                page_bump.as_ref(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// First table helper: Index + page 0. Extra pages use `prepare_page` only.
     pub fn prepare_rel(
         ctx: Context<PrepareRel>,
         rel_oid: u32,
         page_no: u32,
         pk_attr: u8,
     ) -> Result<()> {
-        require!(
-            ctx.accounts.slab.authority == ctx.accounts.authority.key(),
-            SlabError::Unauthorized
-        );
         let slab_key = ctx.accounts.slab.key();
         let rel_bytes = rel_oid.to_le_bytes();
         let page_bytes = page_no.to_le_bytes();
@@ -276,7 +340,56 @@ pub mod slab {
         Ok(())
     }
 
-    pub fn commit(ctx: Context<CommitSlab>) -> Result<()> {
+    /// Delegate one Index after `prepare_index`. Does not touch Slab or Catalog.
+    pub fn delegate_index(
+        ctx: Context<DelegateIndex>,
+        rel_oid: u32,
+        pk_attr: u8,
+    ) -> Result<()> {
+        load_slab_ignore_owner(&ctx.accounts.slab.to_account_info(), ctx.accounts.payer.key)?;
+        let validator = ctx.remaining_accounts.first().map(|acc| acc.key());
+        let slab_key = ctx.accounts.slab.key();
+        let rel_bytes = rel_oid.to_le_bytes();
+        let pk_bytes = [pk_attr];
+        ctx.accounts.delegate_index(
+            &ctx.accounts.payer,
+            &[IDX_SEED, slab_key.as_ref(), rel_bytes.as_ref(), pk_bytes.as_ref()],
+            DelegateConfig {
+                validator,
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Delegate one PagePtr after `prepare_page`. Does not touch Slab or Catalog.
+    pub fn delegate_page(
+        ctx: Context<DelegatePage>,
+        rel_oid: u32,
+        page_no: u32,
+    ) -> Result<()> {
+        load_slab_ignore_owner(&ctx.accounts.slab.to_account_info(), ctx.accounts.payer.key)?;
+        let validator = ctx.remaining_accounts.first().map(|acc| acc.key());
+        let slab_key = ctx.accounts.slab.key();
+        let rel_bytes = rel_oid.to_le_bytes();
+        let page_bytes = page_no.to_le_bytes();
+        ctx.accounts.delegate_page_ptr(
+            &ctx.accounts.payer,
+            &[
+                PAGE_SEED,
+                slab_key.as_ref(),
+                rel_bytes.as_ref(),
+                page_bytes.as_ref(),
+            ],
+            DelegateConfig {
+                validator,
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn commit<'a>(ctx: Context<'a, CommitSlab<'a>>) -> Result<()> {
         stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
         ctx.accounts.slab.exit(&crate::ID)?;
         MagicIntentBundleBuilder::new(
@@ -284,17 +397,18 @@ pub mod slab {
             ctx.accounts.magic_context.to_account_info(),
             ctx.accounts.magic_program.to_account_info(),
         )
-        .commit(&[
+        .commit(&commit_list(
             ctx.accounts.slab.to_account_info(),
             ctx.accounts.catalog.to_account_info(),
-        ])
+            ctx.remaining_accounts,
+        ))
         .build_and_invoke()?;
         Ok(())
     }
 
     /// Stamp catalog_root, then MagicIntent-commit with the delegated Slab as payer.
     /// No user signer — Magic invokes this crank. Wallet payers fail InvalidWritableAccount.
-    pub fn crank_commit(ctx: Context<CrankCommit>) -> Result<()> {
+    pub fn crank_commit<'a>(ctx: Context<'a, CrankCommit<'a>>) -> Result<()> {
         let bump = ctx.accounts.slab.bump;
         let authority = ctx.accounts.slab.authority;
         let ns = ctx.accounts.slab.ns;
@@ -328,10 +442,11 @@ pub mod slab {
             ctx.accounts.magic_program.to_account_info(),
         )
         .magic_fee_vault(ctx.accounts.magic_fee_vault.to_account_info())
-        .commit(&[
+        .commit(&commit_list(
             ctx.accounts.slab.to_account_info(),
             ctx.accounts.catalog.to_account_info(),
-        ])
+            ctx.remaining_accounts,
+        ))
         .build_and_invoke_signed(&[seeds])?;
         Ok(())
     }
@@ -390,7 +505,7 @@ pub mod slab {
         Ok(())
     }
 
-    pub fn undelegate(ctx: Context<CommitSlab>) -> Result<()> {
+    pub fn undelegate<'a>(ctx: Context<'a, CommitSlab<'a>>) -> Result<()> {
         stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
         ctx.accounts.slab.exit(&crate::ID)?;
         MagicIntentBundleBuilder::new(
@@ -398,10 +513,11 @@ pub mod slab {
             ctx.accounts.magic_context.to_account_info(),
             ctx.accounts.magic_program.to_account_info(),
         )
-        .commit_and_undelegate(&[
+        .commit_and_undelegate(&commit_list(
             ctx.accounts.slab.to_account_info(),
             ctx.accounts.catalog.to_account_info(),
-        ])
+            ctx.remaining_accounts,
+        ))
         .build_and_invoke()?;
         Ok(())
     }
@@ -529,6 +645,41 @@ fn require_prepared_pda(ai: &AccountInfo, space: usize) -> Result<()> {
     Ok(())
 }
 
+fn load_slab_ignore_owner(ai: &AccountInfo, authority: &Pubkey) -> Result<([u8; 32], u8)> {
+    let data = ai.try_borrow_data()?;
+    let mut src: &[u8] = &data;
+    let slab = SlabAccount::try_deserialize(&mut src)?;
+    require_keys_eq!(slab.authority, *authority, SlabError::Unauthorized);
+    let (expected, _) = Pubkey::find_program_address(
+        &[SLAB_SEED, authority.as_ref(), slab.ns.as_ref()],
+        &crate::ID,
+    );
+    require_keys_eq!(*ai.key, expected, SlabError::Unauthorized);
+    Ok((slab.ns, slab.bump))
+}
+
+fn require_fee_vault(ai: &AccountInfo, authority: &Pubkey, ns: &[u8; 32]) -> Result<u8> {
+    let (expected, bump) =
+        Pubkey::find_program_address(&[FEE_SEED, authority.as_ref(), ns.as_ref()], &crate::ID);
+    require_keys_eq!(*ai.key, expected, SlabError::Unauthorized);
+    Ok(bump)
+}
+
+fn page_ptr_initialized(ai: &AccountInfo) -> Result<bool> {
+    let data = ai.try_borrow_data()?;
+    Ok(data.len() >= 8 && data.starts_with(&PagePtr::DISCRIMINATOR))
+}
+
+fn commit_list<'info>(
+    slab: AccountInfo<'info>,
+    catalog: AccountInfo<'info>,
+    remaining: &[AccountInfo<'info>],
+) -> Vec<AccountInfo<'info>> {
+    let mut out = vec![slab, catalog];
+    out.extend(remaining.iter().cloned());
+    out
+}
+
 /// Workaround: MagicIntentBundleBuilder copies `is_signer` from AccountInfo.
 /// A crank PDA arrives with is_signer=false. Seeds make the CPI valid.
 fn as_signer<'info>(signer: AccountInfo<'info>) -> AccountInfo<'info> {
@@ -591,10 +742,18 @@ fn insert_page(
         catalog.rels[rel_i].pk_attr == pk_attr,
         SlabError::InvalidPrimaryKey
     );
-    require!(
-        catalog.rels[rel_i].n_pages == page_no,
-        SlabError::InvalidPage
-    );
+    let page_initialized = page_ptr_initialized(&ctx.accounts.page_ptr.to_account_info())?;
+    if page_initialized {
+        require!(
+            catalog.rels[rel_i].n_pages == page_no.saturating_add(1),
+            SlabError::InvalidPage
+        );
+    } else {
+        require!(
+            catalog.rels[rel_i].n_pages == page_no,
+            SlabError::InvalidPage
+        );
+    }
     let new_tuples = catalog.rels[rel_i]
         .n_tuples
         .saturating_add(entries.len() as u32);
@@ -640,23 +799,46 @@ fn insert_page(
         &ctx.accounts.page_ptr.to_account_info(),
         8 + PagePtr::INIT_SPACE,
     )?;
-    let page = PagePtr {
-        rel_oid,
-        page_no,
-        txid,
-        hash,
-        n_tuples: entries.len() as u16,
-        flags: 0,
-        bump: ctx.bumps.page_ptr,
-        created_slot: Clock::get()?.slot,
-    };
-    {
-        let mut data = ctx.accounts.page_ptr.try_borrow_mut_data()?;
-        let mut dst: &mut [u8] = &mut data;
-        page.try_serialize(&mut dst)?;
+    if page_initialized {
+        let mut page: PagePtr = {
+            let data = ctx.accounts.page_ptr.try_borrow_data()?;
+            let mut src: &[u8] = &data;
+            PagePtr::try_deserialize(&mut src)?
+        };
+        require!(
+            page.rel_oid == rel_oid && page.page_no == page_no,
+            SlabError::InvalidPage
+        );
+        page.txid = txid;
+        page.hash = hash;
+        page.n_tuples = page
+            .n_tuples
+            .checked_add(entries.len() as u16)
+            .ok_or(error!(SlabError::ProgramLimitExceeded))?;
+        {
+            let mut data = ctx.accounts.page_ptr.try_borrow_mut_data()?;
+            let mut dst: &mut [u8] = &mut data;
+            page.try_serialize(&mut dst)?;
+        }
+    } else {
+        let page = PagePtr {
+            rel_oid,
+            page_no,
+            txid,
+            hash,
+            n_tuples: entries.len() as u16,
+            flags: 0,
+            bump: ctx.bumps.page_ptr,
+            created_slot: Clock::get()?.slot,
+        };
+        {
+            let mut data = ctx.accounts.page_ptr.try_borrow_mut_data()?;
+            let mut dst: &mut [u8] = &mut data;
+            page.try_serialize(&mut dst)?;
+        }
+        catalog.rels[rel_i].n_pages += 1;
     }
 
-    catalog.rels[rel_i].n_pages += 1;
     catalog.rels[rel_i].n_tuples = new_tuples;
     Ok(())
 }
@@ -765,6 +947,54 @@ pub struct PrepareRel<'info> {
         bump
     )]
     pub index: UncheckedAccount<'info>,
+    /// CHECK: empty PagePtr PDA created here.
+    #[account(
+        mut,
+        seeds = [
+            PAGE_SEED,
+            slab.key().as_ref(),
+            &rel_oid.to_le_bytes(),
+            &page_no.to_le_bytes()
+        ],
+        bump
+    )]
+    pub page_ptr: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(rel_oid: u32, pk_attr: u8)]
+pub struct PrepareIndex<'info> {
+    pub authority: Signer<'info>,
+    /// CHECK: program-owned on L1, or DLP-owned after delegate. Handler checks PDA + authority.
+    pub slab: UncheckedAccount<'info>,
+    /// CHECK: system-owned lamport vault. Create on L1 only. Handler checks PDA.
+    #[account(mut)]
+    pub fee_vault: UncheckedAccount<'info>,
+    /// CHECK: empty Index PDA created here.
+    #[account(
+        mut,
+        seeds = [
+            IDX_SEED,
+            slab.key().as_ref(),
+            &rel_oid.to_le_bytes(),
+            &[pk_attr]
+        ],
+        bump
+    )]
+    pub index: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(rel_oid: u32, page_no: u32)]
+pub struct PreparePage<'info> {
+    pub authority: Signer<'info>,
+    /// CHECK: program-owned on L1, or DLP-owned after delegate. Handler checks PDA + authority.
+    pub slab: UncheckedAccount<'info>,
+    /// CHECK: system-owned lamport vault. Create on L1 only. Handler checks PDA.
+    #[account(mut)]
+    pub fee_vault: UncheckedAccount<'info>,
     /// CHECK: empty PagePtr PDA created here.
     #[account(
         mut,
@@ -905,6 +1135,30 @@ pub struct DelegateSlab<'info> {
     #[account(mut, del)]
     pub index: UncheckedAccount<'info>,
     /// CHECK: PDA verified by the delegate CPI via seeds. Create on L1 first.
+    #[account(mut, del)]
+    pub page_ptr: UncheckedAccount<'info>,
+}
+
+#[delegate]
+#[derive(Accounts)]
+pub struct DelegateIndex<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: slab key is an Index seed. Not delegated here.
+    pub slab: UncheckedAccount<'info>,
+    /// CHECK: Index PDA verified by the delegate CPI via seeds.
+    #[account(mut, del)]
+    pub index: UncheckedAccount<'info>,
+}
+
+#[delegate]
+#[derive(Accounts)]
+pub struct DelegatePage<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: slab key is a PagePtr seed. Not delegated here.
+    pub slab: UncheckedAccount<'info>,
+    /// CHECK: PagePtr PDA verified by the delegate CPI via seeds.
     #[account(mut, del)]
     pub page_ptr: UncheckedAccount<'info>,
 }
