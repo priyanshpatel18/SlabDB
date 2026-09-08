@@ -32,4 +32,8 @@ pub enum SlabError {
     InvalidPointer,
     #[msg("delegation record or magic fee vault does not match the validator")]
     InvalidDelegationRecord,
+    #[msg("catalog is already grown to 32 tables")]
+    CatalogGrown,
+    #[msg("column is not indexed")]
+    NotIndexed,
 }

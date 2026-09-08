@@ -117,6 +117,24 @@ export async function waitDelegated(
   );
 }
 
+export async function waitUndelegated(
+  connection: Connection,
+  pubkey: PublicKey,
+  label: string,
+  programId: PublicKey
+) {
+  for (let i = 0; i < 40; i++) {
+    const info = await connection.getAccountInfo(pubkey);
+    if (info && info.owner.equals(programId)) {
+      return;
+    }
+    await sleep(500);
+  }
+  throw new Error(
+    `${label} ${pubkey.toBase58()} is still not owned by the program`
+  );
+}
+
 export async function resolveErTarget(): Promise<{
   erUrl: string;
   remainingAccounts: Remaining[];

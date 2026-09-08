@@ -14,6 +14,7 @@ import {
   requireFundedWallet,
   sendTx,
   waitDelegated,
+  waitUndelegated,
   type Remaining,
 } from "./er-helpers";
 import {
@@ -419,6 +420,96 @@ if (process.env.RUN_ER_TESTS !== "1") {
 
       expect(catalogRoot).to.deep.equal(expectedRoot);
       expect(nRels).to.equal(2);
+    });
+
+    it("undelegate then SELECT on base", async () => {
+      const relOid2 = 2;
+      const pkAttr2 = 0;
+      const [index2] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("idx"),
+          slabPda.toBuffer(),
+          u32le(relOid2),
+          Buffer.from([pkAttr2]),
+        ],
+        program.programId
+      );
+      const [page2] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("page"),
+          slabPda.toBuffer(),
+          u32le(relOid2),
+          u32le(0),
+        ],
+        program.programId
+      );
+      const extra = [
+        { pubkey: indexPda, isSigner: false, isWritable: true },
+        { pubkey: pagePda, isSigner: false, isWritable: true },
+        { pubkey: index2, isSigner: false, isWritable: true },
+        { pubkey: page2, isSigner: false, isWritable: true },
+      ];
+      const undelegateTx = await programEr.methods
+        .undelegate()
+        .accounts({
+          payer: wallet.publicKey,
+          slab: slabPda,
+          catalog: catalogPda,
+          magicProgram: MAGIC_PROGRAM_ID,
+          magicContext: MAGIC_CONTEXT_ID,
+        })
+        .remainingAccounts(extra)
+        .transaction();
+      const erSig = await sendTx(
+        erProvider.connection,
+        undelegateTx,
+        wallet.payer,
+        "undelegate",
+        { cuLimit: 400_000 }
+      );
+      await GetCommitmentSignature(erSig, erProvider.connection);
+      await waitUndelegated(
+        baseProvider.connection,
+        slabPda,
+        "slab",
+        program.programId
+      );
+      await waitUndelegated(
+        baseProvider.connection,
+        catalogPda,
+        "catalog",
+        program.programId
+      );
+      await waitUndelegated(
+        baseProvider.connection,
+        indexPda,
+        "index",
+        program.programId
+      );
+      await waitUndelegated(
+        baseProvider.connection,
+        pagePda,
+        "page_ptr",
+        program.programId
+      );
+      await sleep(2000);
+
+      const selectTx = await program.methods
+        .execSelect(relOid, pkAttr, pk.key, pk.keyLen)
+        .accounts({
+          authority: wallet.publicKey,
+          slab: slabPda,
+          catalog: catalogPda,
+          index: indexPda,
+          pagePtr: pagePda,
+        })
+        .transaction();
+      await sendTx(
+        baseProvider.connection,
+        selectTx,
+        wallet.payer,
+        "exec_select base"
+      );
     });
   });
 }

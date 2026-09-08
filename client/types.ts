@@ -4,6 +4,8 @@ export const TEXT_MAX_BYTES = 1024;
 export const TXID_LEN = 64;
 export const TXID_MIN_LEN = 32;
 
+export const TUPLE_LIVE = 0;
+export const TUPLE_DEAD = 1;
 export const COL_BOOL = 1;
 export const COL_INT4 = 2;
 export const COL_INT8 = 3;

@@ -329,5 +329,24 @@ describe("slab", () => {
     expect(catalog.nRels).to.equal(2);
     expect(catalog.rels[1].nAttrs).to.equal(3);
   });
+
+  it("realloc_catalog grows to 32 relation slots", async () => {
+    await program.methods
+      .reallocCatalog()
+      .accounts({
+        authority: provider.wallet.publicKey,
+        slab: slabPda,
+        catalog: catalogPda,
+      })
+      .rpc();
+    const info = await provider.connection.getAccountInfo(catalogPda);
+    if (!info) {
+      throw new Error("catalog missing after realloc");
+    }
+    const { decodeCatalog } = await import("../client/catalog");
+    const catalog = decodeCatalog(Buffer.from(info.data));
+    expect(catalog.capacity).to.equal(32);
+    expect(catalog.nRels).to.equal(2);
+  });
 });
 }

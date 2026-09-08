@@ -8,6 +8,8 @@ import {
   PAGE_BYTES,
   PAGE_HEADER,
   TEXT_MAX_BYTES,
+  TUPLE_DEAD,
+  TUPLE_LIVE,
   type Column,
   type ColTypeName,
   type Row,
@@ -124,6 +126,10 @@ export function encodeTuple(columns: Column[], row: Row): Buffer {
   return Buffer.concat(parts);
 }
 
+export function withLiveFlag(tuple: Buffer): Buffer {
+  return Buffer.concat([Buffer.from([TUPLE_LIVE]), tuple]);
+}
+
 export function packPage(relOid: number, pageNo: number, tuples: Buffer[]): Buffer {
   const used = PAGE_HEADER + tuples.reduce((n, t) => n + t.length, 0);
   if (used > PAGE_BYTES) {
@@ -131,7 +137,7 @@ export function packPage(relOid: number, pageNo: number, tuples: Buffer[]): Buff
   }
   const page = Buffer.alloc(PAGE_BYTES);
   Buffer.from("SLAB").copy(page, 0);
-  page.writeUInt8(1, 4);
+  page.writeUInt8(2, 4);
   page.writeUInt32LE(relOid, 5);
   page.writeUInt32LE(pageNo, 9);
   page.writeUInt16LE(tuples.length, 13);
@@ -143,7 +149,22 @@ export function packPage(relOid: number, pageNo: number, tuples: Buffer[]): Buff
   return page;
 }
 
-export function unpackPage(page: Buffer, columns: Column[]): Row[] {
+export type PhysicalRow = {
+  dead: boolean;
+  row: Row;
+  start: number;
+  length: number;
+};
+
+function tuplePayloadLen(page: Buffer, off: number, columns: Column[]): number {
+  let cur = off + 1;
+  for (const col of columns) {
+    cur = decodeValue(page, cur, col.typ).next;
+  }
+  return cur - off;
+}
+
+export function unpackPhysical(page: Buffer, columns: Column[]): PhysicalRow[] {
   if (page.length !== PAGE_BYTES) {
     throw new Error(`page must be ${PAGE_BYTES} bytes`);
   }
@@ -151,25 +172,59 @@ export function unpackPage(page: Buffer, columns: Column[]): Row[] {
     throw new Error("page magic is not SLAB");
   }
   const n = page.readUInt16LE(13);
-  const rows: Row[] = [];
+  const version = page.readUInt8(4);
+  const rows: PhysicalRow[] = [];
   let off = PAGE_HEADER;
   for (let i = 0; i < n; i++) {
-    const row: Row = {};
-    for (const col of columns) {
-      const decoded = decodeValue(page, off, col.typ);
-      row[col.name] = decoded.value;
-      off = decoded.next;
+    if (version >= 2) {
+      const dead = page.readUInt8(off) === TUPLE_DEAD;
+      const start = off;
+      const length = tuplePayloadLen(page, off, columns);
+      const row: Row = {};
+      let cur = off + 1;
+      for (const col of columns) {
+        const decoded = decodeValue(page, cur, col.typ);
+        row[col.name] = decoded.value;
+        cur = decoded.next;
+      }
+      rows.push({ dead, row, start, length });
+      off = start + length;
+    } else {
+      const start = off;
+      const row: Row = {};
+      for (const col of columns) {
+        const decoded = decodeValue(page, off, col.typ);
+        row[col.name] = decoded.value;
+        off = decoded.next;
+      }
+      rows.push({ dead: false, row, start, length: off - start });
     }
-    rows.push(row);
   }
   return rows;
 }
 
+export function unpackPage(page: Buffer, columns: Column[]): Row[] {
+  return unpackPhysical(page, columns)
+    .filter((r) => !r.dead)
+    .map((r) => r.row);
+}
+
+export function unpackSlot(
+  page: Buffer,
+  columns: Column[],
+  slot: number
+): Row | null {
+  const rows = unpackPhysical(page, columns);
+  if (slot < 0 || slot >= rows.length || rows[slot].dead) {
+    return null;
+  }
+  return rows[slot].row;
+}
+
 export function usedBytes(page: Buffer, columns: Column[]): number {
-  const rows = unpackPage(page, columns);
   let used = PAGE_HEADER;
-  for (const row of rows) {
-    used += encodeTuple(columns, row).length;
+  for (const row of unpackPhysical(page, columns)) {
+    used += row.length;
   }
   return used;
 }
@@ -179,7 +234,7 @@ export function tupleFitsWithColumns(
   columns: Column[],
   tuple: Buffer
 ): boolean {
-  return usedBytes(page, columns) + tuple.length <= PAGE_BYTES;
+  return usedBytes(page, columns) + withLiveFlag(tuple).length <= PAGE_BYTES;
 }
 
 export function appendTuple(
@@ -187,10 +242,65 @@ export function appendTuple(
   columns: Column[],
   tuple: Buffer
 ): Buffer {
-  const rows = unpackPage(page, columns);
-  const packed = rows.map((row) => encodeTuple(columns, row));
-  packed.push(tuple);
-  const relOid = page.readUInt32LE(5);
-  const pageNo = page.readUInt32LE(9);
-  return packPage(relOid, pageNo, packed);
+  const packed = unpackPhysical(page, columns).map((r) =>
+    Buffer.concat([
+      Buffer.from([r.dead ? TUPLE_DEAD : TUPLE_LIVE]),
+      encodeTuple(columns, r.row),
+    ])
+  );
+  packed.push(withLiveFlag(tuple));
+  return packPage(page.readUInt32LE(5), page.readUInt32LE(9), packed);
+}
+
+export function tombstoneSlot(
+  page: Buffer,
+  columns: Column[],
+  slot: number
+): Buffer {
+  const rows = unpackPhysical(page, columns);
+  if (slot < 0 || slot >= rows.length) {
+    throw new Error("slot is out of range");
+  }
+  rows[slot].dead = true;
+  const packed = rows.map((r) =>
+    Buffer.concat([
+      Buffer.from([r.dead ? TUPLE_DEAD : TUPLE_LIVE]),
+      encodeTuple(columns, r.row),
+    ])
+  );
+  return packPage(page.readUInt32LE(5), page.readUInt32LE(9), packed);
+}
+
+export function rewriteSlot(
+  page: Buffer,
+  columns: Column[],
+  slot: number,
+  tuple: Buffer
+): { page: Buffer; slot: number } {
+  const rows = unpackPhysical(page, columns);
+  if (slot < 0 || slot >= rows.length) {
+    throw new Error("slot is out of range");
+  }
+  const flagged = withLiveFlag(tuple);
+  if (flagged.length === rows[slot].length) {
+    const out = Buffer.from(page);
+    flagged.copy(out, rows[slot].start);
+    return { page: out, slot };
+  }
+  rows[slot].dead = true;
+  const packed = rows.map((r) =>
+    Buffer.concat([
+      Buffer.from([r.dead ? TUPLE_DEAD : TUPLE_LIVE]),
+      encodeTuple(columns, r.row),
+    ])
+  );
+  packed.push(flagged);
+  return {
+    page: packPage(page.readUInt32LE(5), page.readUInt32LE(9), packed),
+    slot: packed.length - 1,
+  };
+}
+
+export function liveCount(page: Buffer, columns: Column[]): number {
+  return unpackPhysical(page, columns).filter((r) => !r.dead).length;
 }

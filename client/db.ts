@@ -1,18 +1,26 @@
 import { Program } from "@anchor-lang/core";
-import { DELEGATION_PROGRAM_ID } from "@magicblock-labs/ephemeral-rollups-sdk";
+import {
+  DELEGATION_PROGRAM_ID,
+  MAGIC_CONTEXT_ID,
+  MAGIC_PROGRAM_ID,
+} from "@magicblock-labs/ephemeral-rollups-sdk";
 import { PublicKey } from "@solana/web3.js";
 import type { Slab } from "../target/types/slab";
+import { decodeCatalog, type RelInfo } from "./catalog";
 import { decodeIrysTxid } from "./ids";
 import {
   appendTuple,
-  colTypeFromU8,
   colTypeToAnchor,
   encodePk,
   encodeTuple,
   packPage,
+  rewriteSlot,
   sha256,
+  tombstoneSlot,
   tupleFitsWithColumns,
-  unpackPage,
+  unpackPhysical,
+  unpackSlot,
+  withLiveFlag,
 } from "./page";
 import { parseSql } from "./sql";
 import type { PageStore } from "./store";
@@ -33,23 +41,10 @@ export type SlabDbOpts = {
   remainingAccounts?: Remaining[];
 };
 
-type RelInfo = {
-  oid: number;
-  name: string;
-  pkAttr: number;
-  nPages: number;
-  nTuples: number;
-  columns: Column[];
-};
-
 function u32le(n: number): Buffer {
   const buf = Buffer.alloc(4);
   buf.writeUInt32LE(n);
   return buf;
-}
-
-function cstr(bytes: number[] | Uint8Array): string {
-  return Buffer.from(Array.from(bytes)).toString("utf8").replace(/\0+$/, "");
 }
 
 function sleep(ms: number): Promise<void> {
@@ -143,8 +138,24 @@ export class SlabDb {
       await this.createTable(ast.name, ast.columns, ast.pkAttr);
       return [];
     }
+    if (ast.kind === "createIndex") {
+      await this.createIndex(ast.table, ast.column);
+      return [];
+    }
     if (ast.kind === "insert") {
       await this.insert(ast.table, ast.columns, ast.values);
+      return [];
+    }
+    if (ast.kind === "update") {
+      await this.update(ast.table, ast.set, ast.where);
+      return [];
+    }
+    if (ast.kind === "delete") {
+      await this.delete(ast.table, ast.where);
+      return [];
+    }
+    if (ast.kind === "drop") {
+      await this.dropTable(ast.name);
       return [];
     }
     return this.select(ast.table, ast.columns, ast.where);
@@ -168,31 +179,17 @@ export class SlabDb {
       .rpc();
   }
 
-  private async loadRels(): Promise<RelInfo[]> {
-    const catalog = await (await this.reader()).account.catalog.fetch(this.catalogPda);
-    const n = Number(catalog.nRels);
-    const rels: RelInfo[] = [];
-    for (let i = 0; i < n; i++) {
-      const rel = catalog.rels[i];
-      const nAttrs = Number(rel.nAttrs);
-      const columns: Column[] = [];
-      for (let a = 0; a < nAttrs; a++) {
-        columns.push({
-          name: cstr(rel.attrs[a].name),
-          typ: colTypeFromU8(Number(rel.attrs[a].typ)),
-          notNull: Number(rel.attrs[a].notNull) !== 0,
-        });
-      }
-      rels.push({
-        oid: Number(rel.oid),
-        name: cstr(rel.name),
-        pkAttr: Number(rel.pkAttr),
-        nPages: Number(rel.nPages),
-        nTuples: Number(rel.nTuples),
-        columns,
-      });
+  private async loadCatalog(): Promise<ReturnType<typeof decodeCatalog>> {
+    const reader = await this.reader();
+    const info = await reader.provider.connection.getAccountInfo(this.catalogPda);
+    if (!info) {
+      throw new Error("catalog does not exist");
     }
-    return rels;
+    return decodeCatalog(Buffer.from(info.data));
+  }
+
+  private async loadRels(): Promise<RelInfo[]> {
+    return (await this.loadCatalog()).rels;
   }
 
   private async relByName(name: string): Promise<RelInfo> {
@@ -286,11 +283,12 @@ export class SlabDb {
     pkAttr: number
   ): Promise<void> {
     await this.initialize();
-    const existing = (await this.loadRels()).find((r) => r.name === name);
+    const catalog = await this.loadCatalog();
+    const existing = catalog.rels.find((r) => r.name === name);
     if (existing) {
       throw new Error(`relation ${name} already exists`);
     }
-    const relOid = (await this.loadRels()).length + 1;
+    const relOid = catalog.nextOid;
     await this.prepareIndex(relOid, pkAttr);
     await this.preparePage(relOid, 0);
     await this.maybeDelegateIndex(relOid, pkAttr);
@@ -366,11 +364,11 @@ export class SlabDb {
 
     const packed =
       pageBuf === null
-        ? packPage(rel.oid, pageNo, [tuple])
+        ? packPage(rel.oid, pageNo, [withLiveFlag(tuple)])
         : appendTuple(pageBuf, rel.columns, tuple);
     const uploaded = await this.store.put(packed);
     const slot =
-      pageBuf === null ? 0 : unpackPage(pageBuf, rel.columns).length;
+      pageBuf === null ? 0 : unpackPhysical(pageBuf, rel.columns).length;
 
     await writer.methods
       .execInsert(rel.oid, pageNo, rel.pkAttr, rel.name, uploaded.txid, uploaded.hash, [
@@ -384,6 +382,104 @@ export class SlabDb {
         index: this.indexPda(rel.oid, rel.pkAttr),
       })
       .rpc(await this.rpcOpts());
+    await this.putSecondary(rel, row, pageNo, slot);
+  }
+
+  private indexedAttrs(rel: RelInfo): number[] {
+    const out: number[] = [];
+    for (let a = 0; a < rel.columns.length; a++) {
+      if (a !== rel.pkAttr && (rel.idxMask & (1 << a)) !== 0) {
+        out.push(a);
+      }
+    }
+    return out;
+  }
+
+  private async putSecondary(
+    rel: RelInfo,
+    row: Row,
+    pageNo: number,
+    slot: number
+  ): Promise<void> {
+    const writer = await this.reader();
+    for (const attr of this.indexedAttrs(rel)) {
+      const col = rel.columns[attr];
+      const key = encodePk(row[col.name], col.typ);
+      await writer.methods
+        .execIndexPut(rel.oid, attr, pageNo, [
+          { key: key.key, keyLen: key.keyLen, slot },
+        ])
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          catalog: this.catalogPda,
+          index: this.indexPda(rel.oid, attr),
+        })
+        .rpc(await this.rpcOpts());
+    }
+  }
+
+  private async delSecondary(rel: RelInfo, row: Row): Promise<void> {
+    const writer = await this.reader();
+    for (const attr of this.indexedAttrs(rel)) {
+      const col = rel.columns[attr];
+      const key = encodePk(row[col.name], col.typ);
+      await writer.methods
+        .execIndexDel(rel.oid, attr, [
+          { key: key.key, keyLen: key.keyLen, slot: 0 },
+        ])
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          catalog: this.catalogPda,
+          index: this.indexPda(rel.oid, attr),
+        })
+        .rpc(await this.rpcOpts());
+    }
+  }
+
+  private async syncSecondary(
+    rel: RelInfo,
+    oldRow: Row,
+    newRow: Row,
+    pageNo: number,
+    slot: number,
+    slotChanged: boolean
+  ): Promise<void> {
+    const writer = await this.reader();
+    for (const attr of this.indexedAttrs(rel)) {
+      const col = rel.columns[attr];
+      const oldKey = encodePk(oldRow[col.name], col.typ);
+      const newKey = encodePk(newRow[col.name], col.typ);
+      const keyChanged =
+        oldKey.keyLen !== newKey.keyLen ||
+        oldKey.key.some((b, i) => b !== newKey.key[i]);
+      if (!keyChanged && !slotChanged) {
+        continue;
+      }
+      await writer.methods
+        .execIndexDel(rel.oid, attr, [
+          { key: oldKey.key, keyLen: oldKey.keyLen, slot: 0 },
+        ])
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          catalog: this.catalogPda,
+          index: this.indexPda(rel.oid, attr),
+        })
+        .rpc(await this.rpcOpts());
+      await writer.methods
+        .execIndexPut(rel.oid, attr, pageNo, [
+          { key: newKey.key, keyLen: newKey.keyLen, slot },
+        ])
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          catalog: this.catalogPda,
+          index: this.indexPda(rel.oid, attr),
+        })
+        .rpc(await this.rpcOpts());
+    }
   }
 
   async select(
@@ -392,14 +488,20 @@ export class SlabDb {
     where: { col: string; value: SqlValue } | null
   ): Promise<Row[]> {
     const rel = await this.relByName(table);
-    const pkCol = rel.columns[rel.pkAttr];
     const reader = await this.reader();
     let rows: Row[] = [];
+    const whereAttr = where
+      ? rel.columns.findIndex((c) => c.name === where.col)
+      : -1;
+    const indexed =
+      whereAttr >= 0 &&
+      ((rel.idxMask & (1 << whereAttr)) !== 0 || whereAttr === rel.pkAttr);
 
-    if (where && where.col === pkCol.name) {
-      const pk = encodePk(where.value, pkCol.typ);
+    if (where && indexed) {
+      const col = rel.columns[whereAttr];
+      const pk = encodePk(where.value, col.typ);
       const idx = await reader.account.index.fetch(
-        this.indexPda(rel.oid, rel.pkAttr)
+        this.indexPda(rel.oid, whereAttr)
       );
       let hit: { pageNo: number; slot: number } | null = null;
       for (let i = 0; i < Number(idx.nKeys); i++) {
@@ -418,12 +520,12 @@ export class SlabDb {
         return [];
       }
       await reader.methods
-        .execSelect(rel.oid, rel.pkAttr, pk.key, pk.keyLen)
+        .execSelect(rel.oid, whereAttr, pk.key, pk.keyLen)
         .accounts({
           authority: this.wallet,
           slab: this.slabPda,
           catalog: this.catalogPda,
-          index: this.indexPda(rel.oid, rel.pkAttr),
+          index: this.indexPda(rel.oid, whereAttr),
           pagePtr: this.pagePda(rel.oid, hit.pageNo),
         })
         .rpc(await this.rpcOpts());
@@ -434,8 +536,8 @@ export class SlabDb {
       if (Buffer.from(sha256(page)).compare(Buffer.from(ptr.hash)) !== 0) {
         throw new Error("page hash does not match PagePtr");
       }
-      const decoded = unpackPage(page, rel.columns);
-      rows = [decoded[hit.slot]];
+      const hitRow = unpackSlot(page, rel.columns, hit.slot);
+      rows = hitRow ? [hitRow] : [];
     } else {
       for (let pageNo = 0; pageNo < rel.nPages; pageNo++) {
         const ptr = await reader.account.pagePtr.fetch(
@@ -445,7 +547,11 @@ export class SlabDb {
         if (Buffer.from(sha256(page)).compare(Buffer.from(ptr.hash)) !== 0) {
           throw new Error("page hash does not match PagePtr");
         }
-        rows.push(...unpackPage(page, rel.columns));
+        rows.push(
+          ...unpackPhysical(page, rel.columns)
+            .filter((r) => !r.dead)
+            .map((r) => r.row)
+        );
       }
       if (where) {
         rows = rows.filter((row) => valuesEqual(row[where.col], where.value));
@@ -462,5 +568,270 @@ export class SlabDb {
       }
       return out;
     });
+  }
+
+  async createIndex(table: string, column: string): Promise<void> {
+    const rel = await this.relByName(table);
+    const attr = rel.columns.findIndex((c) => c.name === column);
+    if (attr < 0) {
+      throw new Error(`column ${column} does not exist`);
+    }
+    if (attr === rel.pkAttr) {
+      return;
+    }
+    await this.prepareIndex(rel.oid, attr);
+    await this.maybeDelegateIndex(rel.oid, attr);
+    const writer = await this.reader();
+    await writer.methods
+      .execCreateIndex(rel.oid, attr, rel.name)
+      .accounts({
+        authority: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+        index: this.indexPda(rel.oid, attr),
+      })
+      .rpc(await this.rpcOpts());
+  }
+
+  async update(
+    table: string,
+    set: { col: string; value: SqlValue }[],
+    where: { col: string; value: SqlValue }
+  ): Promise<void> {
+    const rel = await this.relByName(table);
+    const pkCol = rel.columns[rel.pkAttr];
+    if (where.col !== pkCol.name) {
+      throw new Error("UPDATE WHERE must use the primary key");
+    }
+    const found = await this.select(table, "*", where);
+    if (found.length === 0) {
+      throw new Error("row not found");
+    }
+    const next: Row = { ...found[0] };
+    for (const s of set) {
+      next[s.col] = s.value;
+    }
+    const hit = await this.lookupPk(rel, where.value);
+    if (!hit) {
+      throw new Error("row not found");
+    }
+    const reader = await this.reader();
+    const ptr = await reader.account.pagePtr.fetch(
+      this.pagePda(rel.oid, hit.pageNo)
+    );
+    const oldPage = await this.store.get(decodeIrysTxid(ptr.txid));
+    const tuple = encodeTuple(rel.columns, next);
+    const rewritten = rewriteSlot(oldPage, rel.columns, hit.slot, tuple);
+    const uploaded = await this.store.put(rewritten.page);
+    const oldPk = encodePk(found[0][pkCol.name], pkCol.typ);
+    const newPk = encodePk(next[pkCol.name], pkCol.typ);
+    const pkChanged =
+      oldPk.keyLen !== newPk.keyLen ||
+      oldPk.key.some((b, i) => b !== newPk.key[i]);
+    const slotChanged = rewritten.slot !== hit.slot;
+    await reader.methods
+      .execMutate(
+        rel.oid,
+        hit.pageNo,
+        rel.pkAttr,
+        rel.name,
+        uploaded.txid,
+        uploaded.hash,
+        unpackPhysical(rewritten.page, rel.columns).length,
+        rel.nTuples,
+        pkChanged || slotChanged
+          ? [{ key: oldPk.key, keyLen: oldPk.keyLen, slot: hit.slot }]
+          : [],
+        pkChanged || slotChanged
+          ? [{ key: newPk.key, keyLen: newPk.keyLen, slot: rewritten.slot }]
+          : []
+      )
+      .accounts({
+        authority: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+        pagePtr: this.pagePda(rel.oid, hit.pageNo),
+        index: this.indexPda(rel.oid, rel.pkAttr),
+      })
+      .rpc(await this.rpcOpts());
+    await this.syncSecondary(
+      rel,
+      found[0],
+      next,
+      hit.pageNo,
+      rewritten.slot,
+      slotChanged
+    );
+  }
+
+  async delete(
+    table: string,
+    where: { col: string; value: SqlValue }
+  ): Promise<void> {
+    const rel = await this.relByName(table);
+    const pkCol = rel.columns[rel.pkAttr];
+    if (where.col !== pkCol.name) {
+      throw new Error("DELETE WHERE must use the primary key");
+    }
+    const hit = await this.lookupPk(rel, where.value);
+    if (!hit) {
+      return;
+    }
+    const reader = await this.reader();
+    const ptr = await reader.account.pagePtr.fetch(
+      this.pagePda(rel.oid, hit.pageNo)
+    );
+    const oldPage = await this.store.get(decodeIrysTxid(ptr.txid));
+    const oldRow = unpackSlot(oldPage, rel.columns, hit.slot);
+    const packed = tombstoneSlot(oldPage, rel.columns, hit.slot);
+    const uploaded = await this.store.put(packed);
+    const pk = encodePk(where.value, pkCol.typ);
+    await reader.methods
+      .execMutate(
+        rel.oid,
+        hit.pageNo,
+        rel.pkAttr,
+        rel.name,
+        uploaded.txid,
+        uploaded.hash,
+        unpackPhysical(packed, rel.columns).length,
+        Math.max(0, rel.nTuples - 1),
+        [{ key: pk.key, keyLen: pk.keyLen, slot: hit.slot }],
+        []
+      )
+      .accounts({
+        authority: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+        pagePtr: this.pagePda(rel.oid, hit.pageNo),
+        index: this.indexPda(rel.oid, rel.pkAttr),
+      })
+      .rpc(await this.rpcOpts());
+    if (oldRow) {
+      await this.delSecondary(rel, oldRow);
+    }
+  }
+
+  async dropTable(name: string): Promise<void> {
+    const rel = await this.relByName(name);
+    const writer = await this.reader();
+    await writer.methods
+      .execDrop(rel.oid, rel.name)
+      .accounts({
+        authority: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+      })
+      .rpc(await this.rpcOpts());
+  }
+
+  async reallocCatalog(): Promise<void> {
+    await this.program.methods
+      .reallocCatalog()
+      .accounts({
+        authority: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+      })
+      .rpc();
+  }
+
+  async delegate(relOid: number, pageNo: number, pkAttr: number): Promise<void> {
+    await this.program.methods
+      .delegate(this.ns, relOid, pageNo, pkAttr)
+      .accounts({
+        payer: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+        index: this.indexPda(relOid, pkAttr),
+        pagePtr: this.pagePda(relOid, pageNo),
+      })
+      .remainingAccounts(this.remainingAccounts)
+      .rpc();
+    await sleep(3000);
+  }
+
+  extraCommitAccounts(rel: RelInfo): Remaining[] {
+    const extra: Remaining[] = [
+      {
+        pubkey: this.indexPda(rel.oid, rel.pkAttr),
+        isSigner: false,
+        isWritable: true,
+      },
+    ];
+    for (let p = 0; p < rel.nPages; p++) {
+      extra.push({
+        pubkey: this.pagePda(rel.oid, p),
+        isSigner: false,
+        isWritable: true,
+      });
+    }
+    for (const attr of this.indexedAttrs(rel)) {
+      extra.push({
+        pubkey: this.indexPda(rel.oid, attr),
+        isSigner: false,
+        isWritable: true,
+      });
+    }
+    return extra;
+  }
+
+  async commit(extra: Remaining[] = []): Promise<string> {
+    const er = this.programEr;
+    if (!er) {
+      throw new Error("commit needs programEr");
+    }
+    return er.methods
+      .commit()
+      .accounts({
+        payer: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+        magicProgram: MAGIC_PROGRAM_ID,
+        magicContext: MAGIC_CONTEXT_ID,
+      })
+      .remainingAccounts(extra)
+      .rpc({ skipPreflight: true });
+  }
+
+  async undelegate(extra: Remaining[] = []): Promise<string> {
+    const er = this.programEr;
+    if (!er) {
+      throw new Error("undelegate needs programEr");
+    }
+    const sig = await er.methods
+      .undelegate()
+      .accounts({
+        payer: this.wallet,
+        slab: this.slabPda,
+        catalog: this.catalogPda,
+        magicProgram: MAGIC_PROGRAM_ID,
+        magicContext: MAGIC_CONTEXT_ID,
+      })
+      .remainingAccounts(extra)
+      .rpc({ skipPreflight: true });
+    await sleep(4000);
+    return sig;
+  }
+
+  private async lookupPk(
+    rel: RelInfo,
+    value: SqlValue
+  ): Promise<{ pageNo: number; slot: number } | null> {
+    const reader = await this.reader();
+    const pkCol = rel.columns[rel.pkAttr];
+    const pk = encodePk(value, pkCol.typ);
+    const idx = await reader.account.index.fetch(
+      this.indexPda(rel.oid, rel.pkAttr)
+    );
+    for (let i = 0; i < Number(idx.nKeys); i++) {
+      const e = idx.keys[i];
+      const keyLen = Number(e.keyLen);
+      const key = Array.from(e.key as number[]).slice(0, keyLen);
+      if (keyLen === pk.keyLen && key.every((b, j) => b === pk.key[j])) {
+        return { pageNo: Number(e.pageNo), slot: Number(e.slot) };
+      }
+    }
+    return null;
   }
 }

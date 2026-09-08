@@ -19,7 +19,8 @@ use constants::{
 };
 use error::SlabError;
 use state::{
-    encode_name, name_eq, Attr, Catalog, Index, IndexEntry, PagePtr, Rel, SlabAccount,
+    catalog_capacity, catalog_head, catalog_head_mut, catalog_rels, catalog_rels_mut, encode_name,
+    name_eq, rel_index, Attr, Catalog, Index, IndexEntry, PagePtr, Rel, SlabAccount,
 };
 
 declare_id!("58AARMgjnefMz59oCc4WpnqCmpuR92FfQtNk7mV2Sxet");
@@ -102,6 +103,8 @@ pub mod slab {
         let mut catalog = ctx.accounts.catalog.load_init()?;
         catalog.n_rels = 0;
         catalog.bump = ctx.bumps.catalog;
+        catalog.flags = 0;
+        catalog.next_oid = 1;
         drop(catalog);
 
         let vault_bump = [ctx.bumps.fee_vault];
@@ -390,7 +393,7 @@ pub mod slab {
     }
 
     pub fn commit<'a>(ctx: Context<'a, CommitSlab<'a>>) -> Result<()> {
-        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
+        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog.to_account_info())?;
         ctx.accounts.slab.exit(&crate::ID)?;
         MagicIntentBundleBuilder::new(
             ctx.accounts.payer.to_account_info(),
@@ -412,7 +415,7 @@ pub mod slab {
         let bump = ctx.accounts.slab.bump;
         let authority = ctx.accounts.slab.authority;
         let ns = ctx.accounts.slab.ns;
-        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
+        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog.to_account_info())?;
         ctx.accounts.slab.exit(&crate::ID)?;
 
         let delegation_record_data = ctx.accounts.delegation_record.try_borrow_data()?;
@@ -506,7 +509,7 @@ pub mod slab {
     }
 
     pub fn undelegate<'a>(ctx: Context<'a, CommitSlab<'a>>) -> Result<()> {
-        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog)?;
+        stamp_catalog_root(&mut ctx.accounts.slab, &ctx.accounts.catalog.to_account_info())?;
         ctx.accounts.slab.exit(&crate::ID)?;
         MagicIntentBundleBuilder::new(
             ctx.accounts.payer.to_account_info(),
@@ -519,6 +522,215 @@ pub mod slab {
             ctx.remaining_accounts,
         ))
         .build_and_invoke()?;
+        Ok(())
+    }
+
+    /// Grow Catalog from 16 to 32 relation slots. Call on L1 (or ER if already delegated).
+    pub fn realloc_catalog(ctx: Context<ReallocCatalog>) -> Result<()> {
+        let catalog = ctx.accounts.catalog.to_account_info();
+        require!(
+            catalog.data_len() == Catalog::SIZE,
+            SlabError::CatalogGrown
+        );
+        require!(*catalog.owner == crate::ID, SlabError::InvalidPage);
+        let new_len = Catalog::GROWN_SIZE;
+        let rent = Rent::get()?.minimum_balance(new_len);
+        let extra = rent.saturating_sub(catalog.lamports());
+        if extra > 0 {
+            invoke(
+                &system_instruction::transfer(
+                    ctx.accounts.authority.key,
+                    catalog.key,
+                    extra,
+                ),
+                &[
+                    ctx.accounts.authority.to_account_info(),
+                    catalog.clone(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
+        catalog
+            .resize(new_len)
+            .map_err(|_| error!(SlabError::ProgramLimitExceeded))?;
+        Ok(())
+    }
+
+    pub fn exec_drop(ctx: Context<ExecDrop>, rel_oid: u32, rel_name: String) -> Result<()> {
+        let mut data = ctx.accounts.catalog.try_borrow_mut_data()?;
+        let n_rels = catalog_head(&data)?.n_rels;
+        let rel_i = {
+            let rels = catalog_rels(&data)?;
+            let rel_i = rel_index(n_rels, rels, rel_oid)?;
+            require!(
+                name_eq(&rels[rel_i].name, &rel_name),
+                SlabError::RelationNotFound
+            );
+            rel_i
+        };
+        let last = (n_rels as usize) - 1;
+        {
+            let rels = catalog_rels_mut(&mut data)?;
+            if rel_i != last {
+                rels[rel_i] = rels[last];
+            }
+            rels[last] = Rel::default();
+        }
+        catalog_head_mut(&mut data)?.n_rels = n_rels - 1;
+        drop(data);
+        ctx.accounts.slab.schema_version += 1;
+        Ok(())
+    }
+
+    pub fn exec_create_index(
+        ctx: Context<ExecSql>,
+        rel_oid: u32,
+        attr: u8,
+        rel_name: String,
+    ) -> Result<()> {
+        let mut data = ctx.accounts.catalog.try_borrow_mut_data()?;
+        let n_rels = catalog_head(&data)?.n_rels;
+        let mask = {
+            let rels = catalog_rels(&data)?;
+            let rel_i = rel_index(n_rels, rels, rel_oid)?;
+            require!(
+                name_eq(&rels[rel_i].name, &rel_name),
+                SlabError::RelationNotFound
+            );
+            require!(
+                (attr as usize) < (rels[rel_i].n_attrs as usize),
+                SlabError::InvalidPrimaryKey
+            );
+            let mask = rels[rel_i].idx_mask;
+            require!(mask & (1u16 << attr) == 0, SlabError::RelationExists);
+            mask
+        };
+        let rel_i = {
+            let rels = catalog_rels(&data)?;
+            rel_index(n_rels, rels, rel_oid)?
+        };
+        catalog_rels_mut(&mut data)?[rel_i].idx_mask = mask | (1u16 << attr);
+        drop(data);
+
+        require_prepared_pda(&ctx.accounts.index.to_account_info(), Index::SIZE)?;
+        {
+            let mut idata = ctx.accounts.index.try_borrow_mut_data()?;
+            idata[..8].copy_from_slice(&Index::DISCRIMINATOR);
+            idata[8..].fill(0);
+            let index: &mut Index = bytemuck::from_bytes_mut(&mut idata[8..]);
+            index.n_keys = 0;
+            index.bump = ctx.bumps.index;
+            index.pk_attr = attr;
+            index.rel_oid = rel_oid;
+        }
+        ctx.accounts.slab.schema_version += 1;
+        Ok(())
+    }
+
+    pub fn exec_mutate(
+        ctx: Context<ExecInsert>,
+        rel_oid: u32,
+        page_no: u32,
+        pk_attr: u8,
+        rel_name: String,
+        txid: [u8; TXID_LEN],
+        hash: [u8; 32],
+        n_page_tuples: u16,
+        n_rel_tuples: u32,
+        removes: Vec<PkSlot>,
+        adds: Vec<PkSlot>,
+    ) -> Result<()> {
+        mutate_page(
+            ctx,
+            rel_oid,
+            page_no,
+            pk_attr,
+            &rel_name,
+            txid,
+            hash,
+            n_page_tuples,
+            n_rel_tuples,
+            &removes,
+            &adds,
+        )
+    }
+
+    pub fn exec_index_put(
+        ctx: Context<ExecIndexPut>,
+        rel_oid: u32,
+        attr: u8,
+        page_no: u32,
+        entries: Vec<PkSlot>,
+    ) -> Result<()> {
+        require!(!entries.is_empty(), SlabError::ProgramLimitExceeded);
+        {
+            let data = ctx.accounts.catalog.try_borrow_data()?;
+            let n_rels = catalog_head(&data)?.n_rels;
+            let rels = catalog_rels(&data)?;
+            let rel_i = rel_index(n_rels, rels, rel_oid)?;
+            require!(
+                rels[rel_i].idx_mask & (1u16 << attr) != 0,
+                SlabError::NotIndexed
+            );
+        }
+        let mut index = ctx.accounts.index.load_mut()?;
+        require!(
+            index.rel_oid == rel_oid && index.pk_attr == attr,
+            SlabError::InvalidPrimaryKey
+        );
+        require!(
+            (index.n_keys as usize) + entries.len() <= MAX_INDEX_KEYS,
+            SlabError::ProgramLimitExceeded
+        );
+        for entry in &entries {
+            require!(
+                entry.key_len > 0 && (entry.key_len as usize) <= 32,
+                SlabError::InvalidIdentifier
+            );
+            for i in 0..(index.n_keys as usize) {
+                require!(
+                    !key_eq(&index.keys[i], &entry.key, entry.key_len),
+                    SlabError::DuplicateKey
+                );
+            }
+            let slot = index.n_keys as usize;
+            index.keys[slot] = IndexEntry {
+                key: entry.key,
+                page_no,
+                slot: entry.slot,
+                key_len: entry.key_len,
+                _pad: 0,
+            };
+            index.n_keys += 1;
+        }
+        Ok(())
+    }
+
+    pub fn exec_index_del(
+        ctx: Context<ExecIndexPut>,
+        rel_oid: u32,
+        attr: u8,
+        entries: Vec<PkSlot>,
+    ) -> Result<()> {
+        require!(!entries.is_empty(), SlabError::ProgramLimitExceeded);
+        {
+            let data = ctx.accounts.catalog.try_borrow_data()?;
+            let n_rels = catalog_head(&data)?.n_rels;
+            let rels = catalog_rels(&data)?;
+            let rel_i = rel_index(n_rels, rels, rel_oid)?;
+            require!(
+                rels[rel_i].idx_mask & (1u16 << attr) != 0,
+                SlabError::NotIndexed
+            );
+        }
+        let mut index = ctx.accounts.index.load_mut()?;
+        require!(
+            index.rel_oid == rel_oid && index.pk_attr == attr,
+            SlabError::InvalidPrimaryKey
+        );
+        for entry in &entries {
+            index_remove(&mut index, &entry.key, entry.key_len)?;
+        }
         Ok(())
     }
 }
@@ -539,21 +751,22 @@ fn create_table(
         SlabError::InvalidPrimaryKey
     );
 
-    let mut catalog = ctx.accounts.catalog.load_mut()?;
-    require!(
-        (catalog.n_rels as usize) < MAX_TABLES,
-        SlabError::ProgramLimitExceeded
-    );
-    require!(
-        rel_oid == (catalog.n_rels as u32) + 1,
-        SlabError::InvalidRelOid
-    );
-
-    for i in 0..(catalog.n_rels as usize) {
+    let mut data = ctx.accounts.catalog.try_borrow_mut_data()?;
+    let cap = catalog_capacity(data.len());
+    let (n_rels, _next_oid) = {
+        let head = catalog_head(&data)?;
         require!(
-            !name_eq(&catalog.rels[i].name, name),
-            SlabError::RelationExists
+            (head.n_rels as usize) < cap && (head.n_rels as usize) < MAX_TABLES,
+            SlabError::ProgramLimitExceeded
         );
+        require!(rel_oid == head.next_oid, SlabError::InvalidRelOid);
+        (head.n_rels, head.next_oid)
+    };
+    {
+        let rels = catalog_rels(&data)?;
+        for i in 0..(n_rels as usize) {
+            require!(!name_eq(&rels[i].name, name), SlabError::RelationExists);
+        }
     }
 
     let mut rel = Rel::default();
@@ -561,6 +774,7 @@ fn create_table(
     rel.name = encode_name(name)?;
     rel.n_attrs = columns.len() as u8;
     rel.pk_attr = pk_attr;
+    rel.idx_mask = 1u16 << pk_attr;
     rel.n_pages = 0;
     rel.n_tuples = 0;
 
@@ -572,34 +786,38 @@ fn create_table(
         };
     }
 
+    {
+        let rels = catalog_rels_mut(&mut data)?;
+        rels[n_rels as usize] = rel;
+    }
+    {
+        let head = catalog_head_mut(&mut data)?;
+        head.n_rels = n_rels + 1;
+        head.next_oid = rel_oid.saturating_add(1);
+    }
+    drop(data);
+
     require_prepared_pda(&ctx.accounts.index.to_account_info(), Index::SIZE)?;
     {
-        let mut data = ctx.accounts.index.try_borrow_mut_data()?;
-        require!(data.len() == Index::SIZE, SlabError::ProgramLimitExceeded);
-        data[..8].copy_from_slice(&Index::DISCRIMINATOR);
-        data[8..].fill(0);
-        let index: &mut Index = bytemuck::from_bytes_mut(&mut data[8..]);
+        let mut idata = ctx.accounts.index.try_borrow_mut_data()?;
+        require!(idata.len() == Index::SIZE, SlabError::ProgramLimitExceeded);
+        idata[..8].copy_from_slice(&Index::DISCRIMINATOR);
+        idata[8..].fill(0);
+        let index: &mut Index = bytemuck::from_bytes_mut(&mut idata[8..]);
         index.n_keys = 0;
         index.bump = ctx.bumps.index;
         index.pk_attr = pk_attr;
         index.rel_oid = rel_oid;
     }
 
-    let rel_idx = catalog.n_rels as usize;
-    catalog.rels[rel_idx] = rel;
-    catalog.n_rels += 1;
     ctx.accounts.slab.schema_version += 1;
     Ok(())
 }
 
 /// L1 header commits to the catalog bytes last written on the ER.
-fn stamp_catalog_root(
-    slab: &mut Account<SlabAccount>,
-    catalog: &AccountLoader<Catalog>,
-) -> Result<()> {
+fn stamp_catalog_root(slab: &mut Account<SlabAccount>, catalog: &AccountInfo) -> Result<()> {
     let root = {
-        let info = catalog.to_account_info();
-        let data = info.data.borrow();
+        let data = catalog.data.borrow();
         hash(&data).to_bytes()
     };
     slab.catalog_root = root;
@@ -689,13 +907,121 @@ fn as_signer<'info>(signer: AccountInfo<'info>) -> AccountInfo<'info> {
     }
 }
 
-fn rel_index(catalog: &Catalog, rel_oid: u32) -> Result<usize> {
-    for i in 0..(catalog.n_rels as usize) {
-        if catalog.rels[i].oid == rel_oid {
-            return Ok(i);
+fn index_remove(index: &mut Index, key: &[u8; 32], key_len: u8) -> Result<()> {
+    let n = index.n_keys as usize;
+    for i in 0..n {
+        if key_eq(&index.keys[i], key, key_len) {
+            if i + 1 != n {
+                index.keys[i] = index.keys[n - 1];
+            }
+            index.keys[n - 1] = IndexEntry::default();
+            index.n_keys -= 1;
+            return Ok(());
         }
     }
-    err!(SlabError::RelationNotFound)
+    err!(SlabError::RowNotFound)
+}
+
+fn mutate_page(
+    ctx: Context<ExecInsert>,
+    rel_oid: u32,
+    page_no: u32,
+    pk_attr: u8,
+    rel_name: &str,
+    txid: [u8; TXID_LEN],
+    hash: [u8; 32],
+    n_page_tuples: u16,
+    n_rel_tuples: u32,
+    removes: &[PkSlot],
+    adds: &[PkSlot],
+) -> Result<()> {
+    require!(is_irys_txid(&txid), SlabError::InvalidPointer);
+    require!(hash.iter().any(|b| *b != 0), SlabError::InvalidPointer);
+    require!(
+        n_rel_tuples <= MAX_ROWS_PER_TABLE && n_rel_tuples as usize <= MAX_INDEX_KEYS,
+        SlabError::ProgramLimitExceeded
+    );
+    require!(
+        page_ptr_initialized(&ctx.accounts.page_ptr.to_account_info())?,
+        SlabError::InvalidPage
+    );
+
+    {
+        let data = ctx.accounts.catalog.try_borrow_data()?;
+        let n_rels = catalog_head(&data)?.n_rels;
+        let rels = catalog_rels(&data)?;
+        let rel_i = rel_index(n_rels, rels, rel_oid)?;
+        require!(
+            name_eq(&rels[rel_i].name, rel_name),
+            SlabError::RelationNotFound
+        );
+        require!(
+            rels[rel_i].pk_attr == pk_attr,
+            SlabError::InvalidPrimaryKey
+        );
+        require!(page_no < rels[rel_i].n_pages, SlabError::InvalidPage);
+    }
+
+    let mut index = ctx.accounts.index.load_mut()?;
+    require!(
+        index.rel_oid == rel_oid && index.pk_attr == pk_attr,
+        SlabError::InvalidPrimaryKey
+    );
+    for entry in removes {
+        index_remove(&mut index, &entry.key, entry.key_len)?;
+    }
+    require!(
+        (index.n_keys as usize) + adds.len() <= MAX_INDEX_KEYS,
+        SlabError::ProgramLimitExceeded
+    );
+    for entry in adds {
+        require!(
+            entry.key_len > 0 && (entry.key_len as usize) <= 32,
+            SlabError::InvalidIdentifier
+        );
+        for i in 0..(index.n_keys as usize) {
+            require!(
+                !key_eq(&index.keys[i], &entry.key, entry.key_len),
+                SlabError::DuplicateKey
+            );
+        }
+        let slot = index.n_keys as usize;
+        index.keys[slot] = IndexEntry {
+            key: entry.key,
+            page_no,
+            slot: entry.slot,
+            key_len: entry.key_len,
+            _pad: 0,
+        };
+        index.n_keys += 1;
+    }
+    drop(index);
+
+    let mut page: PagePtr = {
+        let data = ctx.accounts.page_ptr.try_borrow_data()?;
+        let mut src: &[u8] = &data;
+        PagePtr::try_deserialize(&mut src)?
+    };
+    require!(
+        page.rel_oid == rel_oid && page.page_no == page_no,
+        SlabError::InvalidPage
+    );
+    page.txid = txid;
+    page.hash = hash;
+    page.n_tuples = n_page_tuples;
+    {
+        let mut data = ctx.accounts.page_ptr.try_borrow_mut_data()?;
+        let mut dst: &mut [u8] = &mut data;
+        page.try_serialize(&mut dst)?;
+    }
+
+    let mut data = ctx.accounts.catalog.try_borrow_mut_data()?;
+    let rel_i = {
+        let n_rels = catalog_head(&data)?.n_rels;
+        rel_index(n_rels, catalog_rels(&data)?, rel_oid)?
+    };
+    catalog_rels_mut(&mut data)?[rel_i].n_tuples = n_rel_tuples;
+    Ok(())
 }
 
 fn is_irys_txid(txid: &[u8; TXID_LEN]) -> bool {
@@ -732,31 +1058,32 @@ fn insert_page(
     require!(is_irys_txid(&txid), SlabError::InvalidPointer);
     require!(hash.iter().any(|b| *b != 0), SlabError::InvalidPointer);
 
-    let mut catalog = ctx.accounts.catalog.load_mut()?;
-    let rel_i = rel_index(&catalog, rel_oid)?;
-    require!(
-        name_eq(&catalog.rels[rel_i].name, rel_name),
-        SlabError::RelationNotFound
-    );
-    require!(
-        catalog.rels[rel_i].pk_attr == pk_attr,
-        SlabError::InvalidPrimaryKey
-    );
     let page_initialized = page_ptr_initialized(&ctx.accounts.page_ptr.to_account_info())?;
-    if page_initialized {
+    let rel_i;
+    let n_pages;
+    let n_tuples;
+    {
+        let data = ctx.accounts.catalog.try_borrow_data()?;
+        let n_rels = catalog_head(&data)?.n_rels;
+        let rels = catalog_rels(&data)?;
+        rel_i = rel_index(n_rels, rels, rel_oid)?;
         require!(
-            catalog.rels[rel_i].n_pages == page_no.saturating_add(1),
-            SlabError::InvalidPage
+            name_eq(&rels[rel_i].name, rel_name),
+            SlabError::RelationNotFound
         );
-    } else {
         require!(
-            catalog.rels[rel_i].n_pages == page_no,
-            SlabError::InvalidPage
+            rels[rel_i].pk_attr == pk_attr,
+            SlabError::InvalidPrimaryKey
         );
+        n_pages = rels[rel_i].n_pages;
+        n_tuples = rels[rel_i].n_tuples;
     }
-    let new_tuples = catalog.rels[rel_i]
-        .n_tuples
-        .saturating_add(entries.len() as u32);
+    if page_initialized {
+        require!(n_pages == page_no.saturating_add(1), SlabError::InvalidPage);
+    } else {
+        require!(n_pages == page_no, SlabError::InvalidPage);
+    }
+    let new_tuples = n_tuples.saturating_add(entries.len() as u32);
     require!(
         new_tuples <= MAX_ROWS_PER_TABLE && new_tuples as usize <= MAX_INDEX_KEYS,
         SlabError::ProgramLimitExceeded
@@ -836,10 +1163,16 @@ fn insert_page(
             let mut dst: &mut [u8] = &mut data;
             page.try_serialize(&mut dst)?;
         }
-        catalog.rels[rel_i].n_pages += 1;
+        let mut data = ctx.accounts.catalog.try_borrow_mut_data()?;
+        let rels = catalog_rels_mut(&mut data)?;
+        rels[rel_i].n_pages += 1;
     }
 
-    catalog.rels[rel_i].n_tuples = new_tuples;
+    {
+        let mut data = ctx.accounts.catalog.try_borrow_mut_data()?;
+        let rels = catalog_rels_mut(&mut data)?;
+        rels[rel_i].n_tuples = new_tuples;
+    }
     Ok(())
 }
 
@@ -851,13 +1184,17 @@ fn select_pk(
     pk_len: u8,
 ) -> Result<()> {
     require!(pk_len > 0 && (pk_len as usize) <= 32, SlabError::InvalidIdentifier);
-    let catalog = ctx.accounts.catalog.load()?;
-    let rel_i = rel_index(&catalog, rel_oid)?;
-    require!(
-        catalog.rels[rel_i].pk_attr == pk_attr,
-        SlabError::InvalidPrimaryKey
-    );
-    drop(catalog);
+    {
+        let data = ctx.accounts.catalog.try_borrow_data()?;
+        let n_rels = catalog_head(&data)?.n_rels;
+        let rels = catalog_rels(&data)?;
+        let rel_i = rel_index(n_rels, rels, rel_oid)?;
+        let mask = rels[rel_i].idx_mask;
+        require!(
+            rels[rel_i].pk_attr == pk_attr || mask & (1u16 << pk_attr) != 0,
+            SlabError::NotIndexed
+        );
+    }
 
     let index = ctx.accounts.index.load()?;
     require!(
@@ -1026,7 +1363,8 @@ pub struct ExecSql<'info> {
         seeds = [CAT_SEED, slab.key().as_ref()],
         bump
     )]
-    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN. Handler reads the header.
+    pub catalog: UncheckedAccount<'info>,
     /// CHECK: Index PDA from prepare_rel. Mutated here, never created here.
     #[account(
         mut,
@@ -1057,7 +1395,8 @@ pub struct ExecInsert<'info> {
         seeds = [CAT_SEED, slab.key().as_ref()],
         bump
     )]
-    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN. Handler reads the header.
+    pub catalog: UncheckedAccount<'info>,
     /// CHECK: PagePtr PDA from prepare_rel. Mutated here, never created here.
     #[account(
         mut,
@@ -1097,7 +1436,8 @@ pub struct ExecSelect<'info> {
         seeds = [CAT_SEED, slab.key().as_ref()],
         bump
     )]
-    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN. Handler reads the header.
+    pub catalog: UncheckedAccount<'info>,
     #[account(
         seeds = [
             IDX_SEED,
@@ -1180,7 +1520,8 @@ pub struct CommitSlab<'info> {
         seeds = [CAT_SEED, slab.key().as_ref()],
         bump
     )]
-    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN. Handler reads the header.
+    pub catalog: UncheckedAccount<'info>,
 }
 
 /// Crank path: Magic invokes this with no user signature.
@@ -1199,7 +1540,8 @@ pub struct CrankCommit<'info> {
         seeds = [CAT_SEED, slab.key().as_ref()],
         bump
     )]
-    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN. Handler reads the header.
+    pub catalog: UncheckedAccount<'info>,
     /// CHECK: slab delegation record; bytes [8..40] are the validator.
     #[account(address = ephemeral_rollups_sdk::pda::delegation_record_pda_from_delegated_account(&slab.key()))]
     pub delegation_record: UncheckedAccount<'info>,
@@ -1226,7 +1568,8 @@ pub struct ScheduleCommitCrank<'info> {
         seeds = [CAT_SEED, slab.key().as_ref()],
         bump
     )]
-    pub catalog: AccountLoader<'info, Catalog>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN. Handler reads the header.
+    pub catalog: UncheckedAccount<'info>,
     /// CHECK: slab delegation record; forwarded into crank_commit.
     #[account(address = ephemeral_rollups_sdk::pda::delegation_record_pda_from_delegated_account(&slab.key()))]
     pub delegation_record: UncheckedAccount<'info>,
@@ -1238,4 +1581,72 @@ pub struct ScheduleCommitCrank<'info> {
     pub magic_context: UncheckedAccount<'info>,
     /// CHECK: this program. Required by the Magic schedule CPI.
     pub program: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ReallocCatalog<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        has_one = authority @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    /// CHECK: catalog PDA grown from INIT to GROWN size.
+    #[account(
+        mut,
+        seeds = [CAT_SEED, slab.key().as_ref()],
+        bump
+    )]
+    pub catalog: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ExecDrop<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        has_one = authority @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN.
+    #[account(
+        mut,
+        seeds = [CAT_SEED, slab.key().as_ref()],
+        bump
+    )]
+    pub catalog: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(rel_oid: u32, attr: u8)]
+pub struct ExecIndexPut<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        has_one = authority @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    /// CHECK: catalog PDA. Size is INIT or GROWN.
+    #[account(
+        seeds = [CAT_SEED, slab.key().as_ref()],
+        bump
+    )]
+    pub catalog: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [
+            IDX_SEED,
+            slab.key().as_ref(),
+            &rel_oid.to_le_bytes(),
+            &[attr]
+        ],
+        bump
+    )]
+    pub index: AccountLoader<'info, Index>,
 }

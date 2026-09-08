@@ -7,9 +7,9 @@ Product name is **Slab**. SlabDB is informal.
 ## v0 lock
 
 - Accounts: `Slab`, `Catalog`, `PagePtr`, `Index`. Pointer-per-key is dead.
-- SQL: `CREATE TABLE`, `INSERT`, `SELECT`, PK, `WHERE` on one table. No JOIN, UPDATE, BEGIN, COPY.
+- SQL: `CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`. PK `WHERE`. Secondary index `WHERE` after `CREATE INDEX`. No JOIN, BEGIN, COPY.
 - Types: bool, int4, int8, text ≤ 1 KiB, timestamptz.
-- Tables: 16 in this slice (Solana inner-ix create cap is 10 KiB). 32 after a realloc ix.
+- Tables: 16 at init (Solana inner-ix create cap is 10 KiB). `realloc_catalog` on L1 grows the catalog to 32. Do this before delegate.
 - Write-ack: Irys confirm, then write. Local tests use a fixture TXID. Live tests upload the 8 KiB page and wait for the gateway before `INSERT`.
 - Public ER before private ER.
 
@@ -26,7 +26,7 @@ await db.exec("INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'first not
 const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
 ```
 
-`INSERT` writes one row. If the current page is full, the client calls `prepare_page` for the next page. `SELECT` returns decoded rows. `WHERE` on the PK uses the on-chain index. `WHERE` on another column scans pages in the store.
+`INSERT` writes one row. If the current page is full, the client calls `prepare_page` for the next page. `SELECT` returns decoded rows. `WHERE` on the PK uses the on-chain index. `WHERE` on a column with `CREATE INDEX` uses a secondary `Index` PDA. Other `WHERE` clauses scan pages in the store. `UPDATE` and `DELETE` rewrite the Irys page (tombstone or in-place) and then update the pointer and index. `DROP TABLE` removes the catalog slot. The catalog does not reuse oids.
 
 The program never sees SQL text. It receives `SqlStmt`, page pointers, and index keys.
 
@@ -39,8 +39,10 @@ The program never sees SQL text. It receives `SqlStmt`, page pointers, and index
 | `prepare_index` / `prepare_page` | Base. Extra tables and extra pages. Works after Slab is delegated (fee vault stays on L1). |
 | `delegate` | Base. First shot: slab + catalog + one Index + one PagePtr. |
 | `delegate_index` / `delegate_page` | Base. Extra PDAs after the first delegate. Does not re-delegate Slab or Catalog. |
-| `exec_sql` / `exec_insert` | ER after delegate (`skipPreflight: true`). Local tests run these on the validator. |
-| `exec_select` | ER (`skipPreflight: true`) |
+| `exec_sql` / `exec_insert` / `exec_mutate` / `exec_index_put` | ER after delegate (`skipPreflight: true`). Local tests run these on the validator. |
+| `exec_select` | ER (`skipPreflight: true`). After undelegate, send this to base. |
+| `exec_drop` / `exec_create_index` | ER after delegate. Local tests run these on the validator. |
+| `realloc_catalog` | Base, before delegate. Grows Catalog from 16 to 32 relation slots. |
 | `commit` / `undelegate` | ER. Pass extra Index and PagePtr as `remainingAccounts` so MagicIntent commits them. |
 | `schedule_commit_crank` | ER (`skipPreflight: true`) |
 | `crank_commit` | ER (Magic invokes; no user signer). Uses the delegated Slab as MagicIntent payer plus the validator `magic_fee_vault`. |
@@ -59,6 +61,12 @@ The program never sees SQL text. It receives `SqlStmt`, page pointers, and index
 4. Irys write-ack — done. Pack the 8 KiB page, upload, wait for the receipt and gateway bytes, then `INSERT` the Irys id. Row bytes stay off-chain. The public ER suite uses a live Irys id.
 5. Commit crank — this tree. Schedule `crank_commit` on the public ER. Magic stamps `catalog_root` and MagicIntent-commits it to base. The crank uses the delegated Slab as payer (see `rewards-delegated-vrf`).
 6. SQL client — this tree. `client/` parses the v0 subset, packs typed pages (bool, int4, int8, text, timestamptz), and returns SELECT rows.
+7. Undelegate round trip — this tree. Pass extra Index and PagePtr as `remainingAccounts`. After undelegate, `SELECT` runs on Helius (base).
+8. `SlabDb.exec()` on the public ER — this tree. Use `programEr` plus `IrysPageStore`. `CREATE TABLE` stays on L1. `INSERT` / `UPDATE` / `SELECT` run on the ER after delegate.
+9. `UPDATE` / `DELETE` — this tree. The client rewrites the Irys page (in-place or tombstone). `exec_mutate` updates `PagePtr` and the PK index.
+10. Secondary index — this tree. `CREATE INDEX ON t (col)` sets `idx_mask` and inits an `Index` PDA. `WHERE col =` uses that index. Create the index before `INSERT` (no backfill).
+11. `DROP TABLE` — this tree. Compact the catalog slot. `next_oid` does not decrease. A new table gets a new oid.
+12. `realloc_catalog` — this tree. Grow from 16 to 32 relation slots on L1 before delegate.
 
 ## Public ER tests
 

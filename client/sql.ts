@@ -21,7 +21,38 @@ export type ParsedSelect = {
   where: { col: string; value: SqlValue } | null;
 };
 
-export type ParsedSql = ParsedCreate | ParsedInsert | ParsedSelect;
+export type ParsedUpdate = {
+  kind: "update";
+  table: string;
+  set: { col: string; value: SqlValue }[];
+  where: { col: string; value: SqlValue };
+};
+
+export type ParsedDelete = {
+  kind: "delete";
+  table: string;
+  where: { col: string; value: SqlValue };
+};
+
+export type ParsedDrop = {
+  kind: "drop";
+  name: string;
+};
+
+export type ParsedCreateIndex = {
+  kind: "createIndex";
+  table: string;
+  column: string;
+};
+
+export type ParsedSql =
+  | ParsedCreate
+  | ParsedInsert
+  | ParsedSelect
+  | ParsedUpdate
+  | ParsedDelete
+  | ParsedDrop
+  | ParsedCreateIndex;
 
 const TYPE_ALIASES: Record<string, ColTypeName> = {
   bool: "bool",
@@ -175,17 +206,86 @@ function parseSelect(sql: string): ParsedSelect {
 
 export function parseSql(sql: string): ParsedSql {
   const s = strip(sql);
-  if (/\bJOIN\b/i.test(s) || /\bUNION\b/i.test(s) || /^\s*(UPDATE|DELETE|BEGIN|COPY)\b/i.test(s)) {
+  if (/\bJOIN\b/i.test(s) || /\bUNION\b/i.test(s) || /^\s*(BEGIN|COPY)\b/i.test(s)) {
     throw new Error("statement is not in the v0 SQL subset");
   }
   if (/^CREATE\s+TABLE\b/i.test(s)) {
     return parseCreate(s);
   }
+  if (/^CREATE\s+INDEX\b/i.test(s)) {
+    return parseCreateIndex(s);
+  }
   if (/^INSERT\s+INTO\b/i.test(s)) {
     return parseInsert(s);
+  }
+  if (/^UPDATE\b/i.test(s)) {
+    return parseUpdate(s);
+  }
+  if (/^DELETE\s+FROM\b/i.test(s)) {
+    return parseDelete(s);
+  }
+  if (/^DROP\s+TABLE\b/i.test(s)) {
+    return parseDrop(s);
   }
   if (/^SELECT\b/i.test(s)) {
     return parseSelect(s);
   }
   throw new Error("statement is not in the v0 SQL subset");
+}
+
+function parseUpdate(sql: string): ParsedUpdate {
+  const m =
+    /^UPDATE\s+([A-Za-z_][A-Za-z0-9_]*)\s+SET\s+(.+?)\s+WHERE\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)\s*$/is.exec(
+      sql
+    );
+  if (!m) {
+    throw new Error("UPDATE syntax is not in the v0 subset");
+  }
+  const set = splitArgs(m[2]).map((part) => {
+    const eq = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/i.exec(part.trim());
+    if (!eq) {
+      throw new Error(`cannot parse SET ${part}`);
+    }
+    return { col: eq[1].toLowerCase(), value: parseValue(eq[2]) };
+  });
+  return {
+    kind: "update",
+    table: m[1].toLowerCase(),
+    set,
+    where: { col: m[3].toLowerCase(), value: parseValue(m[4]) },
+  };
+}
+
+function parseDelete(sql: string): ParsedDelete {
+  const m =
+    /^DELETE\s+FROM\s+([A-Za-z_][A-Za-z0-9_]*)\s+WHERE\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)\s*$/is.exec(
+      sql
+    );
+  if (!m) {
+    throw new Error("DELETE syntax is not in the v0 subset");
+  }
+  return {
+    kind: "delete",
+    table: m[1].toLowerCase(),
+    where: { col: m[2].toLowerCase(), value: parseValue(m[3]) },
+  };
+}
+
+function parseDrop(sql: string): ParsedDrop {
+  const m = /^DROP\s+TABLE\s+([A-Za-z_][A-Za-z0-9_]*)\s*$/is.exec(sql);
+  if (!m) {
+    throw new Error("DROP TABLE syntax is not in the v0 subset");
+  }
+  return { kind: "drop", name: m[1].toLowerCase() };
+}
+
+function parseCreateIndex(sql: string): ParsedCreateIndex {
+  const m =
+    /^CREATE\s+INDEX(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s+ON\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$/is.exec(
+      sql
+    );
+  if (!m) {
+    throw new Error("CREATE INDEX syntax is not in the v0 subset");
+  }
+  return { kind: "createIndex", table: m[1].toLowerCase(), column: m[2].toLowerCase() };
 }

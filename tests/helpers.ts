@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { decodeIrysTxid, encodeIrysTxid, fixtureTxid } from "../client/ids";
-import { encodeTuple, packPage, sha256 } from "../client/page";
+import { encodeTuple, packPage, sha256, withLiveFlag } from "../client/page";
 import { PAGE_BYTES, type Column } from "../client/types";
 
 function loadDotEnv() {
@@ -63,7 +63,7 @@ export function int8Key(value: bigint): { key: number[]; keyLen: number } {
 }
 
 export function buildPage(relOid: number, pageNo: number, tuples: Buffer[]): Buffer {
-  return packPage(relOid, pageNo, tuples);
+  return packPage(relOid, pageNo, tuples.map(withLiveFlag));
 }
 
 export function noteTuple(id: bigint, author: string, body: string): Buffer {
