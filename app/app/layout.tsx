@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Newsreader } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { getSEOTags } from "@/lib/seo";
+import { SEO_KEYWORDS } from "@/lib/site";
 import "./globals.css";
 
 const sans = IBM_Plex_Sans({
@@ -29,10 +31,20 @@ export const viewport: Viewport = {
   themeColor: "#2c241c",
 };
 
+const defaultTitle = "Slab: SQL-native storage for onchain data";
+
 export const metadata: Metadata = {
-  title: "Slab",
-  description:
-    "SQL-native storage for onchain data. Indexes on MagicBlock. Pages on Irys.",
+  ...getSEOTags({
+    title: defaultTitle,
+    description:
+      "SQL-native storage for onchain data. Indexes on MagicBlock. Pages on Irys.",
+    keywords: [...SEO_KEYWORDS],
+    canonicalUrlRelative: "/",
+  }),
+  title: {
+    default: defaultTitle,
+    template: "%s | Slab",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

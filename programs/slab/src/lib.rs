@@ -410,7 +410,7 @@ pub mod slab {
     }
 
     /// Stamp catalog_root, then MagicIntent-commit with the delegated Slab as payer.
-    /// No user signer — Magic invokes this crank. Wallet payers fail InvalidWritableAccount.
+    /// No user signer. Magic invokes this crank. Wallet payers fail InvalidWritableAccount.
     pub fn crank_commit<'a>(ctx: Context<'a, CrankCommit<'a>>) -> Result<()> {
         let bump = ctx.accounts.slab.bump;
         let authority = ctx.accounts.slab.authority;

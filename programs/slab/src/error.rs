@@ -2,10 +2,10 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum SlabError {
-    /// SQLSTATE 42601 — statement is outside the v0 subset.
+    /// SQLSTATE 42601: statement is outside the v0 subset.
     #[msg("42601 syntax_error: statement is not in the v0 SQL subset")]
     SyntaxError,
-    /// SQLSTATE 54000 — table / column / row cap.
+    /// SQLSTATE 54000: table / column / row cap.
     #[msg("54000 program_limit_exceeded")]
     ProgramLimitExceeded,
     #[msg("relation already exists")]

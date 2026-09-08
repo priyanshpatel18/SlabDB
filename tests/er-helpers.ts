@@ -40,7 +40,7 @@ export function requireBaseRpc(): string {
   }
   if (host === "api.devnet.solana.com") {
     throw new Error(
-      `Do not use https://api.devnet.solana.com — it rate-limits writes. Use ${DEFAULT_DEVNET_RPC}`
+      `Do not use https://api.devnet.solana.com. It rate-limits writes. Use ${DEFAULT_DEVNET_RPC}`
     );
   }
   return url;
@@ -212,7 +212,7 @@ export async function resolveMagicFeeVault(
   const info = await connection.getAccountInfo(record, "confirmed");
   if (!info || info.data.length < 40) {
     throw new Error(
-      `delegation record missing for ${delegated.toBase58()} — delegate first`
+      `delegation record missing for ${delegated.toBase58()}. Delegate first.`
     );
   }
   const validator = new PublicKey(info.data.subarray(8, 40));

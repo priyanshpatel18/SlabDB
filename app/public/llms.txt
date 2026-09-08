@@ -1,0 +1,19 @@
+# Slab
+
+SQL-native storage for onchain data. Indexes run on a MagicBlock public Ephemeral Rollup. Table pages are 8,192 bytes on Irys.
+
+## Product
+
+- Name: Slab
+- Category: onchain SQL catalog
+- Chains: Solana (base) + MagicBlock public ER
+- Storage: Irys 8 KiB pages
+
+## Pages
+
+- [Home](/): product
+- [Console](/console): SQL workstation (v0 subset)
+
+## Do not confuse with
+
+Slab is not a hosted Postgres. Isolation is slab + wallet + namespace.
