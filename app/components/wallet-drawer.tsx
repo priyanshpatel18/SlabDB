@@ -226,16 +226,26 @@ export function WalletDrawer() {
                 </Button>
               </div>
             </div>
+            {agentAvailable && !agentEnabled ? (
+              <Button
+                className="w-full min-h-10"
+                disabled={agentBusy}
+                aria-busy={agentBusy}
+                onClick={onEnableAgent}
+              >
+                <ShieldCheck data-icon="inline-start" />
+                {agentBusy ? "Enabling agent" : "Enable agent"}
+              </Button>
+            ) : null}
+            {agentEnabled ? (
+              <p className="text-xs text-kiln">Agent signer on</p>
+            ) : null}
           </DrawerHeader>
 
           {view === "settings" ? (
             <SettingsList
               address={address}
-              agentAvailable={agentAvailable}
-              agentBusy={agentBusy}
-              agentEnabled={agentEnabled}
               exportBusy={exportBusy}
-              onEnableAgent={onEnableAgent}
               onExport={onExport}
               onRefresh={() => setTick((n) => n + 1)}
             />
@@ -425,20 +435,12 @@ function ActivityList({
 
 function SettingsList({
   address,
-  agentAvailable,
-  agentBusy,
-  agentEnabled,
   exportBusy,
-  onEnableAgent,
   onExport,
   onRefresh,
 }: {
   address: string;
-  agentAvailable: boolean;
-  agentBusy: boolean;
-  agentEnabled: boolean;
   exportBusy: boolean;
-  onEnableAgent: () => void;
   onExport: () => void;
   onRefresh: () => void;
 }) {
@@ -475,21 +477,6 @@ function SettingsList({
         <RefreshCw data-icon="inline-start" />
         Refresh balances
       </Button>
-      {agentAvailable && !agentEnabled ? (
-        <Button
-          variant="ghost"
-          className="h-10 justify-start"
-          disabled={agentBusy}
-          aria-busy={agentBusy}
-          onClick={onEnableAgent}
-        >
-          <ShieldCheck data-icon="inline-start" />
-          {agentBusy ? "Enabling agent" : "Enable agent"}
-        </Button>
-      ) : null}
-      {agentEnabled ? (
-        <p className="px-2.5 py-2 text-sm text-muted-foreground">Agent signer on</p>
-      ) : null}
       <Button
         variant="ghost"
         className="h-10 justify-start"

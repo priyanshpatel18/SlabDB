@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "next-themes";
 import { SlabWalletProvider } from "@/hooks/use-slab-wallet";
+import { AgentGuideDialog } from "@/components/agent-guide-dialog";
 import {
   PRIVY_ACCENT,
   PRIVY_APP_ID,
@@ -18,6 +19,7 @@ function Inner({ children }: { children: ReactNode }) {
     <SlabWalletProvider>
       <TooltipProvider>
         {children}
+        <AgentGuideDialog />
         <Toaster />
       </TooltipProvider>
     </SlabWalletProvider>
