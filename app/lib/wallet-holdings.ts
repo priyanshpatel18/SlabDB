@@ -151,3 +151,10 @@ export function formatQty(n: number): string {
     maximumFractionDigits: 9,
   }).format(Number.isFinite(n) ? n : 0);
 }
+
+export function formatSol(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(Number.isFinite(n) ? n : 0);
+}

@@ -92,10 +92,10 @@ export function HomeDashboard() {
   const signerId = signer?.publicKey.toBase58() ?? "";
 
   const [home, setHome] = useState<HomeState | null>(null);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(signerId ? "Opening home" : "");
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(Boolean(signerId));
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [boundId, setBoundId] = useState(signerId);
@@ -105,6 +105,8 @@ export function HomeDashboard() {
     setHome(null);
     setError(null);
     setQuery("");
+    setBusy(Boolean(signerId));
+    setStatus(signerId ? "Opening home" : "");
   }
 
   const boot = useCallback(() => {
@@ -131,9 +133,6 @@ export function HomeDashboard() {
       return;
     }
     let cancelled = false;
-    setBusy(true);
-    setError(null);
-    setStatus("Opening home");
     void openHome(signer, (msg) => {
       if (!cancelled) {
         setStatus(msg);

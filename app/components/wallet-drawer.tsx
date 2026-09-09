@@ -7,9 +7,11 @@ import {
   Copy,
   ExternalLink,
   KeyRound,
+  LogOut,
   RefreshCw,
   Settings,
   ShieldCheck,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,8 +22,14 @@ import {
   DrawerDescription,
   DrawerHeader,
   DrawerTitle,
-  DrawerTrigger,
 } from "@/components/ui/drawer";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
@@ -36,6 +44,7 @@ import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { explorerAddressUrl, explorerTxUrl, shortAddr } from "@/lib/cluster";
 import {
   formatQty,
+  formatSol,
   formatUsd,
   loadActivity,
   loadHoldings,
@@ -76,18 +85,48 @@ export function WalletDrawer() {
   const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
-    if (!open || !address) return;
+    if (!address) {
+      return;
+    }
+    let cancelled = false;
+    void loadHoldings(address).then(
+      (nextHoldings) => {
+        if (cancelled) {
+          return;
+        }
+        setHoldings(nextHoldings);
+      },
+      (err) => {
+        if (cancelled) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Could not load wallet");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [address, tick]);
+
+  useEffect(() => {
+    if (!open || !address) {
+      return;
+    }
     let cancelled = false;
     void Promise.all([loadHoldings(address), loadActivity(address)]).then(
       ([nextHoldings, nextActivity]) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         setHoldings(nextHoldings);
         setActivity(nextActivity);
         setError(null);
         setLoading(false);
       },
       (err) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         setError(err instanceof Error ? err.message : "Could not load wallet");
         setLoading(false);
       },
@@ -101,6 +140,7 @@ export function WalletDrawer() {
     () => holdings.reduce((sum, row) => sum + row.usd, 0),
     [holdings],
   );
+  const solAmount = holdings.find((row) => row.mint === "native")?.amount;
 
   if (!address) return null;
 
@@ -122,8 +162,81 @@ export function WalletDrawer() {
       .finally(() => setExportBusy(false));
   };
 
+  const openPanel = (next: PanelView) => {
+    setView(next);
+    setLoading(true);
+    setError(null);
+    setOpen(true);
+  };
+
   return (
+    <div className="flex min-w-0 items-center gap-2">
+      <p className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
+        {solAmount == null ? "—" : `${formatSol(solAmount)} SOL`}
+      </p>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-10 shrink-0 sm:min-h-7"
+              aria-label="Account menu"
+            />
+          }
+        >
+          <Avatar size="sm" className="size-5">
+            <AvatarFallback className="bg-kiln/20 text-[9px] font-medium text-kiln">
+              {address.slice(0, 2)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="font-mono">{shortAddr(address)}</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-56 w-64 p-1">
+          <div className="flex items-center gap-2 px-2 py-2">
+            <Avatar size="sm">
+              <AvatarFallback className="bg-kiln/20 text-[10px] font-medium text-kiln">
+                {address.slice(0, 2)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">
+                {shortAddr(address)}
+              </p>
+              <p className="truncate font-mono text-xs text-muted-foreground">
+                {address.slice(0, 8)}…{address.slice(-8)}
+              </p>
+            </div>
+          </div>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="min-h-10 gap-2"
+            onClick={() => openPanel("main")}
+          >
+            <User />
+            Profile
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="min-h-10 gap-2"
+            onClick={() => openPanel("settings")}
+          >
+            <Settings />
+            Settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="min-h-10 gap-2"
+            onClick={() => {
+              void logout();
+            }}
+          >
+            <LogOut />
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     <Drawer
+      open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) {
@@ -136,22 +249,6 @@ export function WalletDrawer() {
       showSwipeHandle
       swipeDirection="right"
     >
-      <DrawerTrigger
-        render={
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-h-10 shrink-0 font-mono sm:min-h-7"
-            aria-label="Open wallet"
-          />
-        }
-      >
-        <span
-          className="size-1.5 shrink-0 rounded-full bg-kiln"
-          aria-hidden
-        />
-        {shortAddr(address)}
-      </DrawerTrigger>
       <DrawerContent className="h-full bg-background sm:[--drawer-content-width:22rem]">
         <div className="flex h-full min-h-0 flex-col">
           <DrawerHeader className="gap-3 p-4 pb-3 md:text-left">
@@ -219,16 +316,6 @@ export function WalletDrawer() {
                     {view === "settings" ? "Back" : "Settings"}
                   </TooltipContent>
                 </Tooltip>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="min-h-10 sm:min-h-7"
-                  onClick={() => {
-                    void logout();
-                  }}
-                >
-                  Disconnect
-                </Button>
               </div>
             </div>
             {agentAvailable && !agentEnabled ? (
@@ -324,6 +411,7 @@ export function WalletDrawer() {
         </div>
       </DrawerContent>
     </Drawer>
+    </div>
   );
 }
 
