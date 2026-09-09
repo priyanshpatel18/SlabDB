@@ -9,4 +9,4 @@ export {
   type ParsedSelect,
   type ParsedSql,
   type ParsedUpdate,
-} from "@/client/sql";
+} from "slabdb";

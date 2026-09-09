@@ -6,7 +6,7 @@ import {
   MAGIC_PROGRAM_ID,
 } from "@magicblock-labs/ephemeral-rollups-sdk";
 import { PublicKey } from "@solana/web3.js";
-import type { Slab } from "../target/types/slab";
+import type { Slab } from "./idl";
 import { decodeCatalog, type RelInfo } from "./catalog";
 import { decodeIrysTxid } from "./ids";
 import {

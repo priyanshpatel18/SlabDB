@@ -6,7 +6,8 @@ import {
 } from "@magicblock-labs/ephemeral-rollups-sdk";
 import { Connection } from "@solana/web3.js";
 import { Slab } from "../target/types/slab";
-import { IrysPageStore, SlabDb } from "../client";
+import { SlabDb } from "../sdk/src";
+import { IrysPageStore } from "../sdk/src/node";
 import {
   resolveErTarget,
   requireBaseRpc,

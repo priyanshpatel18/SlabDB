@@ -19,7 +19,6 @@
       }
     ],
     "paths": {
-      "@/client/*": ["../client/*"],
       "@/*": ["./*"]
     }
   },
@@ -29,8 +28,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts",
-    "../client/**/*.ts"
+    "**/*.mts"
   ],
   "exclude": ["node_modules"]
 }

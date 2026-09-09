@@ -1,3 +1,4 @@
 {
-  "installCommand": "bun install && bun install --cwd .."
+  "bunVersion": "1.4.x",
+  "installCommand": "bun install --cwd .."
 }

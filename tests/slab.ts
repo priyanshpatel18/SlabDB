@@ -343,7 +343,7 @@ describe("slab", () => {
     if (!info) {
       throw new Error("catalog missing after realloc");
     }
-    const { decodeCatalog } = await import("../client/catalog");
+    const { decodeCatalog } = await import("../sdk/src");
     const catalog = decodeCatalog(Buffer.from(info.data));
     expect(catalog.capacity).to.equal(32);
     expect(catalog.nRels).to.equal(2);

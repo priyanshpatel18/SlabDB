@@ -3,8 +3,7 @@
 import { Buffer } from "buffer";
 import { AnchorProvider, Program } from "@anchor-lang/core";
 import { Connection } from "@solana/web3.js";
-import { SlabDb } from "@/client/db";
-import type { RelInfo } from "@/client/catalog";
+import { SlabDb, withTimeout, type RelInfo } from "slabdb";
 import { parseSql, splitStatements, type ParsedSql } from "@/lib/sql";
 import type { Row } from "@/lib/sql-types";
 import { BASE_RPC_URL, NS_LABEL, nsBytes } from "@/lib/cluster";
@@ -12,8 +11,7 @@ import { resolveErTarget } from "@/lib/er-target";
 import { ErProvider } from "@/lib/er-provider";
 import { BrowserIrysPageStore, type StatusFn } from "@/lib/irys-store";
 import type { SlabSigner } from "@/lib/wallet";
-import idl from "@/idl/slab.json";
-import { withTimeout } from "@/client/timeout";
+import idl from "slabdb/idl/slab.json";
 
 if (typeof globalThis.Buffer === "undefined") {
   (globalThis as unknown as { Buffer: typeof Buffer }).Buffer = Buffer;

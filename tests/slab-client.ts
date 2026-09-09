@@ -2,7 +2,7 @@ import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { expect } from "chai";
 import { Slab } from "../target/types/slab";
-import { MemoryPageStore, SlabDb, decodeCatalog, parseSql } from "../client";
+import { MemoryPageStore, SlabDb, decodeCatalog, parseSql } from "../sdk/src";
 import { nsFrom } from "./helpers";
 
 if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {

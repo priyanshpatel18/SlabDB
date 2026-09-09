@@ -1,8 +1,16 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
-import { decodeIrysTxid, encodeIrysTxid, fixtureTxid } from "../client/ids";
-import { encodeTuple, packPage, sha256, withLiveFlag } from "../client/page";
-import { PAGE_BYTES, type Column } from "../client/types";
+import {
+  decodeIrysTxid,
+  encodeIrysTxid,
+  fixtureTxid,
+  encodeTuple,
+  packPage,
+  sha256,
+  withLiveFlag,
+  PAGE_BYTES,
+  type Column,
+} from "../sdk/src";
 
 function loadDotEnv() {
   const path = resolve(process.cwd(), ".env");

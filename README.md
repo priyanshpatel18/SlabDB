@@ -12,7 +12,7 @@ Landing and `/console` live in `app/`. Sign in with Privy (email or Google). Sla
 cd app && bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Host `app/` on Vercel. Do not put Helius keys in the Next.js client. Wallet RPC is `https://rpc.magicblock.app/devnet`.
+Open [http://localhost:3000](http://localhost:3000). Host `app/` on Vercel (Root Directory `app/`). The app depends on `"slabdb": "file:../sdk"`, so keep `sdk/` in the git tree. Do not put Helius keys in the Next.js client. Wallet RPC is `https://rpc.magicblock.app/devnet`.
 
 ## Privy
 
@@ -35,12 +35,12 @@ Accounts: `Slab`, `Catalog`, `PagePtr`, `Index`. Init creates 16 table slots. `r
 
 Console write-ack: SHA-256 hex id in the PagePtr (valid Irys-shaped ASCII). Bytes stay in session storage for this tab. Local tests may use a fixture TXID. Optional Fund Irys prepays the bundler for later durable upload.
 
-## Client
+## SDK
 
-`client/` parses Postgres text, packs 8 KiB pages, stores them (memory or Irys), and calls the program. The program never sees SQL text. It receives `SqlStmt`, page pointers, and index keys.
+`sdk/` is the public TypeScript client (`slabdb`). The console in `app/` uses it. Other apps can use the same package to talk to the program without the website UI.
 
 ```ts
-import { MemoryPageStore, SlabDb } from "./client";
+import { MemoryPageStore, SlabDb } from "slabdb";
 
 const db = new SlabDb({ program, wallet, ns, store: new MemoryPageStore() });
 await db.exec(
@@ -49,6 +49,8 @@ await db.exec(
 await db.exec("INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'first note')");
 const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
 ```
+
+See `sdk/README.md`. In this repo the app depends on `"slabdb": "file:../sdk"`.
 
 `INSERT` writes one row. A full page calls `prepare_page` for the next page. PK `WHERE` uses the on-chain index. `CREATE INDEX` then `WHERE col =` uses a secondary `Index` PDA. Other `WHERE` clauses scan pages in the store. `UPDATE` / `DELETE` rewrite the Irys page, then update the pointer and index. `DROP TABLE` frees the catalog slot. Oids are not reused.
 

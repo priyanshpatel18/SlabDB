@@ -1,6 +1,6 @@
 import { ConnectionMagicRouter } from "@magicblock-labs/ephemeral-rollups-sdk";
 import { PublicKey } from "@solana/web3.js";
-import type { Remaining } from "@/client/db";
+import type { Remaining } from "slabdb";
 import {
   DEFAULT_ER_URL,
   ER_ROUTER_URL,

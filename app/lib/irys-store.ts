@@ -1,9 +1,15 @@
-import { encodeIrysTxid } from "@/client/ids";
-import { fundTxIdFromError, sendIrysFund, type IrysFunder } from "@/client/irys-fund";
-import { sha256 } from "@/client/page";
-import { PageCache, type PageStore, type UploadedPage } from "@/client/store";
-import { withTimeout } from "@/client/timeout";
-import { PAGE_BYTES } from "@/client/types";
+import {
+  encodeIrysTxid,
+  fundTxIdFromError,
+  sendIrysFund,
+  sha256,
+  withTimeout,
+  PAGE_BYTES,
+  PageCache,
+  type IrysFunder,
+  type PageStore,
+  type UploadedPage,
+} from "slabdb";
 import { IRYS_GATEWAY, IRYS_RPC_URL } from "@/lib/cluster";
 import type { SlabSigner } from "@/lib/wallet";
 

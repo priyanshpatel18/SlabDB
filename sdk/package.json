@@ -1,0 +1,58 @@
+{
+  "name": "slabdb",
+  "version": "0.1.0",
+  "license": "ISC",
+  "description": "TypeScript SDK for Slab: SQL catalog on MagicBlock Ephemeral Rollups with 8 KiB pages on Irys.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "require": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./node": {
+      "types": "./src/node.ts",
+      "import": "./src/node.ts",
+      "require": "./src/node.ts",
+      "default": "./src/node.ts"
+    },
+    "./idl/slab.json": "./idl/slab.json"
+  },
+  "files": [
+    "src",
+    "idl",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/priyanshpatel18/SlabDB.git",
+    "directory": "sdk"
+  },
+  "keywords": [
+    "solana",
+    "sql",
+    "magicblock",
+    "ephemeral-rollups",
+    "irys"
+  ],
+  "dependencies": {
+    "@anchor-lang/core": "1.0.2",
+    "@irys/upload": "^0.0.15",
+    "@irys/upload-solana": "^0.1.8",
+    "@magicblock-labs/ephemeral-rollups-sdk": "0.14.3",
+    "@noble/hashes": "2.4.0",
+    "@solana/web3.js": "1.98.4",
+    "pgsql-ast-parser": "12.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.7.3"
+  }
+}

@@ -12,4 +12,4 @@ bun dev
 
 Host from this folder (Vercel root `app/` if the git root is `slab/`). Set `NEXT_PUBLIC_SITE_URL` for production metadata.
 
-See the [repo README](../README.md) for the program, client, and tests.
+See the [repo README](../README.md) for the program, SDK, and tests.
