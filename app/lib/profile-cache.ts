@@ -27,7 +27,7 @@ function writeJson(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    /* quota */
+    return;
   }
 }
 
@@ -104,6 +104,6 @@ export function releaseLocalUid(uid: string, wallet: string) {
   try {
     localStorage.removeItem(PUBLIC_KEY + key);
   } catch {
-    /* ignore */
+    return;
   }
 }

@@ -90,7 +90,7 @@ export const renderSchemaTags = ({
         "@type": "Organization",
         name: site.appName,
         url: BASE_URL,
-        logo: absoluteUrl("/icon.svg"),
+        logo: absoluteUrl("/logo.png"),
       },
       {
         "@type": "WebSite",

@@ -50,7 +50,7 @@ export function Providers({ children }: { children: ReactNode }) {
             appearance: {
               theme: "dark",
               accentColor: PRIVY_ACCENT,
-              logo: "/icon.svg",
+              logo: "/logo.png",
               walletChainType: "solana-only",
               showWalletLoginFirst: false,
             },

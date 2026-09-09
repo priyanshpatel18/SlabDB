@@ -28,7 +28,7 @@ function rememberDismiss(): void {
   try {
     sessionStorage.setItem(DISMISS_KEY, "1");
   } catch {
-    /* ignore */
+    return;
   }
 }
 

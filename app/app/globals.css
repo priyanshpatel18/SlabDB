@@ -4,12 +4,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
-  Slab kiln palette
-  Hue 52 to 62 = fired clay / copper. Neutrals keep that hue at low chroma
-  so the UI is warm stone, not zinc-gray or violet-on-black.
-  Accent is one metal: kiln copper. Nothing else competes.
-*/
+/* kiln hue 48, wordmark cream hue 70 */
 
 @theme inline {
   --color-background: var(--background);
@@ -71,12 +66,12 @@
     Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   --slab-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
-  --kiln-hue: 54;
-  --paper-hue: 78;
+  --kiln-hue: 48;
+  --paper-hue: 70;
   --radius: 0.28rem;
 
-  --bone: oklch(0.93 0.014 var(--paper-hue));
-  --kiln: oklch(0.76 0.12 var(--kiln-hue));
+  --bone: oklch(0.936 0.038 var(--paper-hue));
+  --kiln: oklch(0.734 0.129 var(--kiln-hue));
   --kiln-foreground: oklch(0.18 0.02 var(--kiln-hue));
   --strata: oklch(0.26 0.018 var(--kiln-hue));
   --spotlight: oklch(0.72 0.1 var(--kiln-hue) / 0.22);
@@ -85,37 +80,37 @@
   --beam-to: oklch(0.5 0.07 var(--kiln-hue) / 0);
 
   --background: oklch(0.175 0.018 var(--kiln-hue));
-  --foreground: oklch(0.93 0.014 var(--paper-hue));
+  --foreground: var(--bone);
   --card: oklch(0.205 0.016 var(--kiln-hue));
-  --card-foreground: oklch(0.93 0.014 var(--paper-hue));
+  --card-foreground: var(--bone);
   --popover: oklch(0.205 0.016 var(--kiln-hue));
-  --popover-foreground: oklch(0.93 0.014 var(--paper-hue));
-  --primary: oklch(0.76 0.12 var(--kiln-hue));
+  --popover-foreground: var(--bone);
+  --primary: var(--kiln);
   --primary-foreground: oklch(0.18 0.02 var(--kiln-hue));
   --secondary: oklch(0.24 0.016 var(--kiln-hue));
-  --secondary-foreground: oklch(0.9 0.014 var(--paper-hue));
+  --secondary-foreground: var(--bone);
   --muted: oklch(0.24 0.016 var(--kiln-hue));
-  --muted-foreground: oklch(0.68 0.03 var(--kiln-hue));
+  --muted-foreground: oklch(0.72 0.04 var(--kiln-hue));
   --accent: oklch(0.26 0.03 var(--kiln-hue));
-  --accent-foreground: oklch(0.9 0.02 var(--paper-hue));
+  --accent-foreground: var(--bone);
   --destructive: oklch(0.68 0.15 28);
-  --destructive-foreground: oklch(0.97 0.01 var(--paper-hue));
+  --destructive-foreground: var(--bone);
   --border: oklch(0.3 0.018 var(--kiln-hue));
   --input: oklch(0.3 0.018 var(--kiln-hue));
-  --ring: oklch(0.76 0.12 var(--kiln-hue));
-  --chart-1: oklch(0.76 0.12 var(--kiln-hue));
+  --ring: var(--kiln);
+  --chart-1: var(--kiln);
   --chart-2: oklch(0.7 0.05 78);
   --chart-3: oklch(0.55 0.04 48);
   --chart-4: oklch(0.62 0.08 38);
   --chart-5: oklch(0.42 0.03 52);
   --sidebar: oklch(0.155 0.016 var(--kiln-hue));
-  --sidebar-foreground: oklch(0.93 0.014 var(--paper-hue));
-  --sidebar-primary: oklch(0.76 0.12 var(--kiln-hue));
+  --sidebar-foreground: var(--bone);
+  --sidebar-primary: var(--kiln);
   --sidebar-primary-foreground: oklch(0.18 0.02 var(--kiln-hue));
   --sidebar-accent: oklch(0.26 0.03 var(--kiln-hue));
-  --sidebar-accent-foreground: oklch(0.9 0.02 var(--paper-hue));
+  --sidebar-accent-foreground: var(--bone);
   --sidebar-border: oklch(0.3 0.018 var(--kiln-hue));
-  --sidebar-ring: oklch(0.76 0.12 var(--kiln-hue));
+  --sidebar-ring: var(--kiln);
 }
 
 @layer base {

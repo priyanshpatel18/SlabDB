@@ -267,7 +267,7 @@ async function upsertUserRow(
         previousUid,
       ]);
     } catch {
-      /* old row may be missing */
+      // username row may not exist yet
     }
   }
   onStatus("INSERT INTO users");

@@ -18,7 +18,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** ER txs must not use L1 lastValidBlockHeight confirm. Poll processed, then return. */
+// Poll processed. Do not confirm ER txs on L1.
 async function waitProcessed(
   connection: Connection,
   signature: string,
@@ -39,9 +39,7 @@ async function waitProcessed(
   }
 }
 
-/**
- * Sign, send raw to the ER, skip preflight. Do not confirm on base Solana.
- */
+// Sign and send raw to the ER. Skip preflight. Do not confirm on base.
 export class ErProvider extends AnchorProvider {
   async sendAndConfirm(
     tx: Transaction | VersionedTransaction,

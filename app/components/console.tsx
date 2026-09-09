@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { PublicKey } from "@solana/web3.js";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
+import { BrandLockup } from "@/components/brand-lockup";
 import { WalletButton } from "@/components/wallet-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -322,9 +323,10 @@ export function Console() {
       <aside className="hidden w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
         <Link
           href="/"
+          aria-label="Slab"
           className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-4"
         >
-          <span className="text-xl font-semibold tracking-tight">Slab</span>
+          <BrandLockup />
         </Link>
         <div className="px-4 py-4">
           <p className="text-sm font-medium">{NS_LABEL}</p>
@@ -398,8 +400,12 @@ export function Console() {
 
       <div className="relative flex min-w-0 w-full flex-1 flex-col overflow-x-hidden pt-[env(safe-area-inset-top)] md:pt-0">
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
-          <Link href="/" className="flex shrink-0 items-center md:hidden">
-            <span className="text-xl font-semibold tracking-tight">Slab</span>
+          <Link
+            href="/"
+            aria-label="Slab"
+            className="flex shrink-0 items-center md:hidden"
+          >
+            <BrandLockup />
           </Link>
           <p className="hidden text-sm text-muted-foreground md:block">
             {session

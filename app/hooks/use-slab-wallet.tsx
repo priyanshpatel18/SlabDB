@@ -73,7 +73,7 @@ function writeAgentFlag(address: string, on: boolean): void {
       sessionStorage.removeItem(AGENT_KEY + address);
     }
   } catch {
-    /* ignore */
+    return;
   }
 }
 

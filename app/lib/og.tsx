@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
+import { KILN_BG, KILN_COPPER, WORDMARK_CREAM } from "@/lib/brand";
+
+/* eslint-disable @next/next/no-img-element */
 
 export const OG_SIZE = { width: 1200, height: 630 };
 export const OG_TYPE = "image/png";
@@ -18,13 +21,26 @@ export async function loadOgFonts() {
   ];
 }
 
+async function loadBrandSrc(name: "logo.png" | "wordmark.png") {
+  const data = await readFile(join(process.cwd(), "public", name));
+  return `data:image/png;base64,${data.toString("base64")}`;
+}
+
 type OgCardProps = {
   kicker: string;
   title: string;
   footer: string;
+  logoSrc: string;
+  wordmarkSrc: string;
 };
 
-export function OgCard({ kicker, title, footer }: OgCardProps) {
+export function OgCard({
+  kicker,
+  title,
+  footer,
+  logoSrc,
+  wordmarkSrc,
+}: OgCardProps) {
   return (
     <div
       style={{
@@ -34,9 +50,9 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
         flexDirection: "column",
         justifyContent: "space-between",
         padding: "72px 80px",
-        backgroundColor: "#2c241c",
+        backgroundColor: KILN_BG,
         backgroundImage:
-          "linear-gradient(to right, rgba(212,165,116,0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(212,165,116,0.07) 1px, transparent 1px)",
+          "linear-gradient(to right, rgba(232,144,88,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(232,144,88,0.08) 1px, transparent 1px)",
         backgroundSize: "64px 64px",
       }}
     >
@@ -48,7 +64,7 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
             fontSize: 22,
             letterSpacing: "0.18em",
             textTransform: "uppercase",
-            color: "#a89888",
+            color: "#c4a894",
           }}
         >
           {kicker}
@@ -56,23 +72,20 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
         <div
           style={{
             display: "flex",
+            alignItems: "center",
+            gap: 20,
             marginTop: 28,
-            fontFamily: "Slab Sans",
-            fontSize: 72,
-            fontWeight: 600,
-            letterSpacing: "-0.03em",
-            lineHeight: 1,
-            color: "#f0ebe4",
           }}
         >
-          Slab
+          <img alt="" src={logoSrc} width={88} height={88} />
+          <img alt="Slab" src={wordmarkSrc} width={252} height={88} />
         </div>
         <div
           style={{
             width: 168,
             height: 3,
-            marginTop: 12,
-            backgroundColor: "#d4a574",
+            marginTop: 16,
+            backgroundColor: KILN_COPPER,
           }}
         />
         <div
@@ -83,7 +96,7 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
             fontFamily: "Slab Sans",
             fontSize: 40,
             lineHeight: 1.2,
-            color: "#f0ebe4",
+            color: WORDMARK_CREAM,
           }}
         >
           {title}
@@ -94,7 +107,7 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
           display: "flex",
           fontFamily: "Slab Sans",
           fontSize: 22,
-          color: "#a89888",
+          color: "#c4a894",
         }}
       >
         {footer}
@@ -103,10 +116,17 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
   );
 }
 
-export async function renderOgImage(props: OgCardProps) {
-  const fonts = await loadOgFonts();
-  return new ImageResponse(<OgCard {...props} />, {
-    ...OG_SIZE,
-    fonts,
-  });
+export async function renderOgImage(props: Omit<OgCardProps, "logoSrc" | "wordmarkSrc">) {
+  const [fonts, logoSrc, wordmarkSrc] = await Promise.all([
+    loadOgFonts(),
+    loadBrandSrc("logo.png"),
+    loadBrandSrc("wordmark.png"),
+  ]);
+  return new ImageResponse(
+    <OgCard {...props} logoSrc={logoSrc} wordmarkSrc={wordmarkSrc} />,
+    {
+      ...OG_SIZE,
+      fonts,
+    },
+  );
 }

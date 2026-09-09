@@ -91,10 +91,11 @@ export function ProfileFields({
         </div>
         <div className="relative w-fit">
           {preview ? (
-            <span className="inline-flex size-28 overflow-hidden rounded-full bg-muted">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={preview} alt="" className="size-full object-cover" />
-            </span>
+            <span
+              className="inline-flex size-28 overflow-hidden rounded-full bg-muted bg-cover bg-center"
+              style={{ backgroundImage: `url("${preview}")` }}
+              aria-hidden
+            />
           ) : (
             <Pfp id={draft.pfp} size={112} />
           )}

@@ -1,37 +1,30 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
+import { KILN_BG } from "@/lib/brand";
 
-const KILN_BG = "#1c1814";
-const KILN_PLATE = "#d4a574";
+/* eslint-disable @next/next/no-img-element */
 
-export function KilnMark({ size }: { size: number }) {
-  const plateW = Math.round((size * 20) / 32);
-  const plateH = Math.round((size * 12) / 32);
-  return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: KILN_BG,
-      }}
-    >
+export async function kilnIconResponse(size: number) {
+  const px = Number.isFinite(size) && size > 0 ? size : 32;
+  const logo = await readFile(join(process.cwd(), "public/logo.png"));
+  const src = `data:image/png;base64,${logo.toString("base64")}`;
+  const mark = Math.round(px * 0.86);
+  return new ImageResponse(
+    (
       <div
         style={{
-          width: plateW,
-          height: plateH,
-          backgroundColor: KILN_PLATE,
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: KILN_BG,
         }}
-      />
-    </div>
+      >
+        <img alt="" src={src} width={mark} height={mark} />
+      </div>
+    ),
+    { width: px, height: px },
   );
-}
-
-export function kilnIconResponse(size: number) {
-  const px = Number.isFinite(size) && size > 0 ? size : 32;
-  return new ImageResponse(<KilnMark size={px} />, {
-    width: px,
-    height: px,
-  });
 }

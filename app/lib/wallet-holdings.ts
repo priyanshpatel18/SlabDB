@@ -56,7 +56,7 @@ async function pricesFor(mints: string[]): Promise<Map<string, number>> {
       if (Number.isFinite(price)) map.set(mint, price);
     }
   } catch {
-    /* price feed is optional */
+    return map;
   }
   return map;
 }
