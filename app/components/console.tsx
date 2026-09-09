@@ -6,6 +6,7 @@ import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import type { SlabSigner } from "@/lib/wallet";
 import { Copy, RefreshCw, Search, Table2 } from "lucide-react";
 import { toast } from "sonner";
+import { PublicKey } from "@solana/web3.js";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { WalletButton } from "@/components/wallet-button";
@@ -134,6 +135,7 @@ export function Console() {
   const [runStatus, setRunStatus] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [granteeText, setGranteeText] = useState("");
   const [boundId, setBoundId] = useState(signerId);
 
   if (signerId !== boundId) {
@@ -280,6 +282,20 @@ export function Console() {
       });
   }, [signer]);
 
+  const runAcl = useCallback(
+    (kind: "GRANT" | "REVOKE") => {
+      let pk: PublicKey;
+      try {
+        pk = new PublicKey(granteeText.trim());
+      } catch {
+        setError("Writer pubkey must be base58");
+        return;
+      }
+      runSql(`${kind} ${pk.toBase58()}`);
+    },
+    [granteeText, runSql],
+  );
+
   const inspect = useCallback(
     (name: string) => {
       runSql(`SELECT * FROM ${name};`);
@@ -416,7 +432,7 @@ export function Console() {
                 <p className="mt-1 text-sm break-words text-muted-foreground">
                   {activeRel
                     ? `oid ${activeRel.oid} · ${activeRel.columns.map((c: { name: string; typ: string }) => `${c.name} ${c.typ}`).join(", ")}`
-                    : "Postgres SQL. CREATE TABLE on base. INSERT on the public ER. Pages go to Irys."}
+                    : "Postgres SQL. CREATE TABLE on base. INSERT on the public ER. GRANT a writer pubkey to share the catalog."}
                 </p>
               </div>
               <div className="flex w-full gap-2 sm:w-auto sm:flex-wrap sm:items-center">
@@ -566,6 +582,59 @@ export function Console() {
                   className="h-9 border-0 bg-transparent px-0 font-mono text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
                 />
               </div>
+            </section>
+
+            <section className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+                <p className="text-sm font-medium">Writers</p>
+                <p className="min-w-0 truncate text-xs text-muted-foreground">
+                  Owner only
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
+                <label className="sr-only" htmlFor="slab-grant-writer">
+                  Writer pubkey
+                </label>
+                <Input
+                  id="slab-grant-writer"
+                  value={granteeText}
+                  spellCheck={false}
+                  placeholder="Writer pubkey (base58)"
+                  onChange={(e) => setGranteeText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      if (canRun) runAcl("GRANT");
+                    }
+                  }}
+                  className="h-9 font-mono text-sm sm:flex-1"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 min-w-0 flex-1 sm:flex-none"
+                    disabled={!canRun}
+                    onClick={() => runAcl("GRANT")}
+                  >
+                    Grant
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 min-w-0 flex-1 sm:flex-none"
+                    disabled={!canRun}
+                    onClick={() => runAcl("REVOKE")}
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              </div>
+              <p className="px-4 pb-3 text-xs text-muted-foreground">
+                GRANT lets that wallet INSERT, UPDATE, and DELETE on this slab.
+                GRANT runs on base. SELECT does not need GRANT. You can also run
+                GRANT or REVOKE in the Query box.
+              </p>
             </section>
 
             <section className="overflow-hidden rounded-lg border border-border bg-card">

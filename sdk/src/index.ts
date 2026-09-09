@@ -22,11 +22,14 @@ export type {
   ParsedCreateIndex,
   ParsedDelete,
   ParsedDrop,
+  ParsedGrant,
   ParsedInsert,
+  ParsedRevoke,
   ParsedSelect,
   ParsedSql,
   ParsedUpdate,
 } from "./sql";
+export { formatProgramError, isGrantDenied } from "./tx-error";
 export { bindSql } from "./params";
 export { MemoryPageStore, PageCache } from "./store";
 export type { PageStore, UploadedPage } from "./store";

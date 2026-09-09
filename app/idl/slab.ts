@@ -94,7 +94,7 @@ export type Slab = {
       "name": "crankCommit",
       "docs": [
         "Stamp catalog_root, then MagicIntent-commit with the delegated Slab as payer.",
-        "No user signer — Magic invokes this crank. Wallet payers fail InvalidWritableAccount."
+        "No user signer. Magic invokes this crank. Wallet payers fail InvalidWritableAccount."
       ],
       "discriminator": [
         211,
@@ -1315,10 +1315,7 @@ export type Slab = {
       "accounts": [
         {
           "name": "authority",
-          "signer": true,
-          "relations": [
-            "slab"
-          ]
+          "signer": true
         },
         {
           "name": "slab",
@@ -1406,10 +1403,7 @@ export type Slab = {
       "accounts": [
         {
           "name": "authority",
-          "signer": true,
-          "relations": [
-            "slab"
-          ]
+          "signer": true
         },
         {
           "name": "slab",
@@ -1501,10 +1495,7 @@ export type Slab = {
       "accounts": [
         {
           "name": "authority",
-          "signer": true,
-          "relations": [
-            "slab"
-          ]
+          "signer": true
         },
         {
           "name": "slab",
@@ -1649,10 +1640,7 @@ export type Slab = {
       "accounts": [
         {
           "name": "authority",
-          "signer": true,
-          "relations": [
-            "slab"
-          ]
+          "signer": true
         },
         {
           "name": "slab",
@@ -2015,6 +2003,71 @@ export type Slab = {
       ]
     },
     {
+      "name": "grantWriter",
+      "docs": [
+        "Owner grants another pubkey INSERT / UPDATE / DELETE on this catalog.",
+        "Create the Grant PDA on L1, paid by the fee vault. Do not `init` on the ER:",
+        "that changes the undeleted fee payer (InvalidAccountForFee)."
+      ],
+      "discriminator": [
+        238,
+        123,
+        4,
+        214,
+        233,
+        71,
+        43,
+        179
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "grantee"
+        },
+        {
+          "name": "slab"
+        },
+        {
+          "name": "feeVault",
+          "writable": true
+        },
+        {
+          "name": "grant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "slab"
+              },
+              {
+                "kind": "account",
+                "path": "grantee"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize",
       "discriminator": [
         175,
@@ -2169,7 +2222,7 @@ export type Slab = {
       "name": "preparePage",
       "docs": [
         "Create an empty PagePtr PDA on L1. Call again for page_no 1, 2, …",
-        "Slab may already be DLP-owned."
+        "Slab may already be DLP-owned. Catalog owner or a granted writer may call this."
       ],
       "discriminator": [
         155,
@@ -2548,6 +2601,65 @@ export type Slab = {
       "args": []
     },
     {
+      "name": "revokeWriter",
+      "docs": [
+        "Owner removes a write grant. Close rent back to the L1 fee vault."
+      ],
+      "discriminator": [
+        84,
+        229,
+        109,
+        234,
+        83,
+        56,
+        74,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "grantee"
+        },
+        {
+          "name": "slab"
+        },
+        {
+          "name": "feeVault",
+          "writable": true
+        },
+        {
+          "name": "grant",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  114,
+                  97,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "slab"
+              },
+              {
+                "kind": "account",
+                "path": "grantee"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "scheduleCommitCrank",
       "docs": [
         "Schedule crank_commit on the ER. Send this transaction to the ER, not L1."
@@ -2738,6 +2850,19 @@ export type Slab = {
       ]
     },
     {
+      "name": "grant",
+      "discriminator": [
+        161,
+        166,
+        11,
+        205,
+        204,
+        135,
+        205,
+        54
+      ]
+    },
+    {
       "name": "index",
       "discriminator": [
         140,
@@ -2872,6 +2997,11 @@ export type Slab = {
       "code": 6015,
       "name": "notIndexed",
       "msg": "column is not indexed"
+    },
+    {
+      "code": 6016,
+      "name": "notGranted",
+      "msg": "writer is not the catalog owner and has no GRANT"
     }
   ],
   "types": [
@@ -2967,6 +3097,18 @@ export type Slab = {
           },
           {
             "name": "timestamptz"
+          },
+          {
+            "name": "uuid"
+          },
+          {
+            "name": "float8"
+          },
+          {
+            "name": "jsonb"
+          },
+          {
+            "name": "bytea"
           }
         ]
       }
@@ -2991,6 +3133,29 @@ export type Slab = {
           {
             "name": "notNull",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "grant",
+      "docs": [
+        "Write grant. PDA `[grant, slab, grantee]`. Owner is always a writer."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "slab",
+            "type": "pubkey"
+          },
+          {
+            "name": "grantee",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

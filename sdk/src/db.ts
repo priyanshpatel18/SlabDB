@@ -5,7 +5,7 @@ import {
   MAGIC_CONTEXT_ID,
   MAGIC_PROGRAM_ID,
 } from "@magicblock-labs/ephemeral-rollups-sdk";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, ComputeBudgetProgram } from "@solana/web3.js";
 import type { Slab } from "./idl";
 import { decodeCatalog, type RelInfo } from "./catalog";
 import { decodeIrysTxid } from "./ids";
@@ -27,6 +27,7 @@ import {
 import { writeU32LE } from "./bytes";
 import { createTableSql, dropTableSql, isLegacyLocalPageId, UnreadablePageError } from "./recovery";
 import { parseSql } from "./sql";
+import { formatProgramError } from "./tx-error";
 import type { PageStore } from "./store";
 import type { Column, Row, SqlParam, SqlValue } from "./types";
 
@@ -57,6 +58,10 @@ function u32le(n: number): Buffer {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const DELEGATE_CU = 400_000;
+const delegateCuIx = () =>
+  ComputeBudgetProgram.setComputeUnitLimit({ units: DELEGATE_CU });
 
 async function waitOwner(
   connection: { getAccountInfo: (key: PublicKey) => Promise<{ owner: PublicKey } | null> },
@@ -277,6 +282,17 @@ export class SlabDb {
   }
 
   async exec(sql: string, params?: SqlParam[]): Promise<Row[]> {
+    try {
+      return await this.execInner(sql, params);
+    } catch (err) {
+      if (err instanceof UnreadablePageError) {
+        throw err;
+      }
+      throw new Error(formatProgramError(err));
+    }
+  }
+
+  private async execInner(sql: string, params?: SqlParam[]): Promise<Row[]> {
     const ast = parseSql(sql, params);
     if (ast.kind === "create") {
       await this.createTable(ast.name, ast.columns, ast.pkAttr);
@@ -301,6 +317,14 @@ export class SlabDb {
     }
     if (ast.kind === "drop") {
       await this.dropTable(ast.name);
+      return [];
+    }
+    if (ast.kind === "grant") {
+      await this.grant(new PublicKey(ast.grantee));
+      return [];
+    }
+    if (ast.kind === "revoke") {
+      await this.revoke(new PublicKey(ast.grantee));
       return [];
     }
     return this.select(ast.table, ast.columns, ast.where, {
@@ -345,27 +369,49 @@ export class SlabDb {
   }
 
   async grant(grantee: PublicKey): Promise<void> {
-    await this.program.methods
-      .grantWriter()
-      .accounts({
-        authority: this.wallet,
-        grantee,
-        slab: this.slabPda,
-        grant: this.grantPda(grantee),
-      })
-      .rpc();
+    if (!this.wallet.equals(this.owner)) {
+      throw new Error("only the catalog owner can GRANT");
+    }
+    try {
+      await this.program.methods
+        .grantWriter()
+        .accounts({
+          authority: this.wallet,
+          grantee,
+          slab: this.slabPda,
+          feeVault: this.feeVaultPda,
+          grant: this.grantPda(grantee),
+        })
+        .rpc();
+      if (await this.isDelegated()) {
+        await sleep(2000);
+      }
+    } catch (err) {
+      throw new Error(formatProgramError(err));
+    }
   }
 
   async revoke(grantee: PublicKey): Promise<void> {
-    await this.program.methods
-      .revokeWriter()
-      .accounts({
-        authority: this.wallet,
-        grantee,
-        slab: this.slabPda,
-        grant: this.grantPda(grantee),
-      })
-      .rpc();
+    if (!this.wallet.equals(this.owner)) {
+      throw new Error("only the catalog owner can revoke GRANT");
+    }
+    try {
+      await this.program.methods
+        .revokeWriter()
+        .accounts({
+          authority: this.wallet,
+          grantee,
+          slab: this.slabPda,
+          feeVault: this.feeVaultPda,
+          grant: this.grantPda(grantee),
+        })
+        .rpc();
+      if (await this.isDelegated()) {
+        await sleep(2000);
+      }
+    } catch (err) {
+      throw new Error(formatProgramError(err));
+    }
   }
 
   async resetTable(name: string): Promise<{ dropSql: string; createSql: string }> {
@@ -460,6 +506,7 @@ export class SlabDb {
         index,
       })
       .remainingAccounts(this.remainingAccounts)
+      .preInstructions([delegateCuIx()])
       .rpc();
     await waitOwner(this.program.provider.connection, index, DELEGATION_PROGRAM_ID);
   }
@@ -481,6 +528,7 @@ export class SlabDb {
         pagePtr,
       })
       .remainingAccounts(this.remainingAccounts)
+      .preInstructions([delegateCuIx()])
       .rpc();
     await waitOwner(this.program.provider.connection, pagePtr, DELEGATION_PROGRAM_ID);
   }
@@ -1073,6 +1121,7 @@ export class SlabDb {
         pagePtr: this.pagePda(relOid, pageNo),
       })
       .remainingAccounts(this.remainingAccounts)
+      .preInstructions([delegateCuIx()])
       .rpc();
   }
 

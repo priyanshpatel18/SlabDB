@@ -68,6 +68,16 @@ export type ParsedCreateIndex = {
   column: string;
 };
 
+export type ParsedGrant = {
+  kind: "grant";
+  grantee: string;
+};
+
+export type ParsedRevoke = {
+  kind: "revoke";
+  grantee: string;
+};
+
 export type ParsedSql =
   | ParsedCreate
   | ParsedInsert
@@ -75,7 +85,9 @@ export type ParsedSql =
   | ParsedUpdate
   | ParsedDelete
   | ParsedDrop
-  | ParsedCreateIndex;
+  | ParsedCreateIndex
+  | ParsedGrant
+  | ParsedRevoke;
 
 const TYPE_ALIASES: Record<string, ColTypeName> = {
   bool: "bool",
@@ -493,11 +505,32 @@ function mapStatement(stmt: Statement): ParsedSql {
   }
 }
 
+const ACL_RE = /^(GRANT|REVOKE)\s+([1-9A-HJ-NP-Za-km-z]+)\s*;?\s*$/i;
+
+function parseAcl(text: string): ParsedGrant | ParsedRevoke | null {
+  const m = ACL_RE.exec(text);
+  if (!m) {
+    return null;
+  }
+  const grantee = m[2];
+  if (grantee.length < 32 || grantee.length > 44) {
+    throw new Error("GRANT and REVOKE expect a base58 pubkey");
+  }
+  return {
+    kind: m[1].toLowerCase() as "grant" | "revoke",
+    grantee,
+  };
+}
+
 export function parseSql(sql: string, params?: SqlParam[]): ParsedSql {
   const bound = bindSql(sql, params ?? []);
   const text = bound.trim();
   if (!text) {
     subset();
+  }
+  const acl = parseAcl(text);
+  if (acl) {
+    return acl;
   }
   let stmt: Statement;
   try {

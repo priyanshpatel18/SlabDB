@@ -4,7 +4,7 @@ v0 SQL is a small Postgres subset. The program never sees SQL text. The SDK pars
 
 ## Statements
 
-`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`.
+`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`, `GRANT`, `REVOKE`.
 
 A PRIMARY KEY is required. No JOIN, BEGIN, or COPY.
 
@@ -42,11 +42,13 @@ Old SHA-256 page pointers cannot be fetched. The SDK throws `UnreadablePageError
 
 ## Routing
 
-- initialize, prepare, delegate, CREATE TABLE: base
+- initialize, prepare, delegate, CREATE TABLE, GRANT, REVOKE: base
 - INSERT, UPDATE, DELETE, SELECT after delegate: public ER
 
 `Slab.connect({ wallet, ns })` does this routing for you.
 
 ## Shared catalog
 
-Isolation is `[slab, owner, ns]`. The owner can `GRANT` another pubkey so many users share one schema. `CREATE TABLE` and `DROP TABLE` stay with the owner.
+Isolation is `[slab, owner, ns]`. The owner can run `GRANT <pubkey>` so many users share one schema. `REVOKE <pubkey>` removes that writer. `CREATE TABLE` and `DROP TABLE` stay with the owner. `SELECT` does not need a grant. Pages on Irys are public. See [Privacy](privacy.md).
+
+GRANT creates a Grant PDA on base, paid by the slab fee vault. Do not `init` that account on the ER. `INSERT` on the ER reads the Grant PDA as a remaining account. `REVOKE` closes the PDA on base.

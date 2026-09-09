@@ -45,6 +45,12 @@ function messageFor(ast: ParsedSql, rows: Row[]): string {
   if (ast.kind === "drop") {
     return `DROP TABLE ${ast.name}`;
   }
+  if (ast.kind === "grant") {
+    return `GRANT ${ast.grantee}`;
+  }
+  if (ast.kind === "revoke") {
+    return `REVOKE ${ast.grantee}`;
+  }
   return `${rows.length} row${rows.length === 1 ? "" : "s"}`;
 }
 

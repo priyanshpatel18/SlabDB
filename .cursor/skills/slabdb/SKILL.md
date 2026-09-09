@@ -31,7 +31,7 @@ Use this skill when the user asks for:
 Do not send ER transactions to `https://devnet.magicblock.app/`.
 Do not put Helius keys in the client.
 Do not bump Anchor or Agave.
-Do not start a private ER.
+Do not start a private ER. Irys pages are public. A later Private ER would hide catalog and indexes only. See `docs/privacy.md`.
 
 ## Connect
 

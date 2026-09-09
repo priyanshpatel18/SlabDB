@@ -35,7 +35,7 @@ pub enum ColType {
     Timestamptz,
     Uuid,
     Float8,
-    Json,
+    Jsonb,
     Bytea,
 }
 
@@ -49,7 +49,7 @@ impl ColType {
             ColType::Timestamptz => COL_TIMESTAMPTZ,
             ColType::Uuid => COL_UUID,
             ColType::Float8 => COL_FLOAT8,
-            ColType::Json => COL_JSON,
+            ColType::Jsonb => COL_JSON,
             ColType::Bytea => COL_BYTEA,
         }
     }
@@ -148,16 +148,68 @@ pub mod slab {
     }
 
     /// Owner grants another pubkey INSERT / UPDATE / DELETE on this catalog.
+    /// Create the Grant PDA on L1, paid by the fee vault. Do not `init` on the ER:
+    /// that changes the undeleted fee payer (InvalidAccountForFee).
     pub fn grant_writer(ctx: Context<GrantWriter>) -> Result<()> {
-        let grant = &mut ctx.accounts.grant;
-        grant.slab = ctx.accounts.slab.key();
-        grant.grantee = ctx.accounts.grantee.key();
-        grant.bump = ctx.bumps.grant;
+        let (ns, _) = load_slab_ignore_owner(
+            &ctx.accounts.slab.to_account_info(),
+            ctx.accounts.authority.key,
+        )?;
+        let vault_bump = require_fee_vault(
+            &ctx.accounts.fee_vault.to_account_info(),
+            ctx.accounts.authority.key,
+            &ns,
+        )?;
+        let slab_key = ctx.accounts.slab.key();
+        let grantee = ctx.accounts.grantee.key();
+        let grant_bump = [ctx.bumps.grant];
+        create_pda_paid_by_vault(
+            ctx.accounts.fee_vault.to_account_info(),
+            vault_bump,
+            ctx.accounts.authority.key,
+            &ns,
+            ctx.accounts.grant.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
+            8 + Grant::INIT_SPACE,
+            &[
+                GRANT_SEED,
+                slab_key.as_ref(),
+                grantee.as_ref(),
+                grant_bump.as_ref(),
+            ],
+        )?;
+        let grant = Grant {
+            slab: slab_key,
+            grantee,
+            bump: ctx.bumps.grant,
+        };
+        let mut dst = ctx.accounts.grant.try_borrow_mut_data()?;
+        let mut buf: &mut [u8] = &mut dst;
+        grant.try_serialize(&mut buf)?;
         Ok(())
     }
 
-    /// Owner removes a write grant.
-    pub fn revoke_writer(_ctx: Context<RevokeWriter>) -> Result<()> {
+    /// Owner removes a write grant. Close rent back to the L1 fee vault.
+    pub fn revoke_writer(ctx: Context<RevokeWriter>) -> Result<()> {
+        let (ns, _) = load_slab_ignore_owner(
+            &ctx.accounts.slab.to_account_info(),
+            ctx.accounts.authority.key,
+        )?;
+        require_fee_vault(
+            &ctx.accounts.fee_vault.to_account_info(),
+            ctx.accounts.authority.key,
+            &ns,
+        )?;
+        require_keys_eq!(
+            ctx.accounts.grant.slab,
+            ctx.accounts.slab.key(),
+            SlabError::Unauthorized
+        );
+        require_keys_eq!(
+            ctx.accounts.grant.grantee,
+            ctx.accounts.grantee.key(),
+            SlabError::Unauthorized
+        );
         Ok(())
     }
 
@@ -1739,42 +1791,37 @@ pub struct ExecIndexPut<'info> {
 
 #[derive(Accounts)]
 pub struct GrantWriter<'info> {
-    #[account(mut)]
     pub authority: Signer<'info>,
     /// CHECK: pubkey that may INSERT after this grant.
     pub grantee: UncheckedAccount<'info>,
+    /// CHECK: program-owned on L1, or DLP-owned after delegate.
+    pub slab: UncheckedAccount<'info>,
+    /// CHECK: system-owned lamport vault. Handler checks PDA.
+    #[account(mut)]
+    pub fee_vault: UncheckedAccount<'info>,
+    /// CHECK: empty Grant PDA created here.
     #[account(
-        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
-        bump = slab.bump,
-        has_one = authority @ SlabError::Unauthorized
-    )]
-    pub slab: Account<'info, SlabAccount>,
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + Grant::INIT_SPACE,
+        mut,
         seeds = [GRANT_SEED, slab.key().as_ref(), grantee.key().as_ref()],
         bump
     )]
-    pub grant: Account<'info, Grant>,
+    pub grant: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct RevokeWriter<'info> {
-    #[account(mut)]
     pub authority: Signer<'info>,
     /// CHECK: pubkey to revoke.
     pub grantee: UncheckedAccount<'info>,
-    #[account(
-        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
-        bump = slab.bump,
-        has_one = authority @ SlabError::Unauthorized
-    )]
-    pub slab: Account<'info, SlabAccount>,
+    /// CHECK: program-owned on L1, or DLP-owned after delegate.
+    pub slab: UncheckedAccount<'info>,
+    /// CHECK: rent returns here. Must stay on L1.
+    #[account(mut)]
+    pub fee_vault: UncheckedAccount<'info>,
     #[account(
         mut,
-        close = authority,
+        close = fee_vault,
         seeds = [GRANT_SEED, slab.key().as_ref(), grantee.key().as_ref()],
         bump = grant.bump
     )]

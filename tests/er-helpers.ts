@@ -10,6 +10,7 @@ import {
   Keypair,
   PublicKey,
   SendTransactionError,
+  SystemProgram,
   Transaction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
@@ -133,6 +134,44 @@ export async function waitUndelegated(
   throw new Error(
     `${label} ${pubkey.toBase58()} is still not owned by the program`
   );
+}
+
+export async function sendLamports(
+  connection: Connection,
+  payer: Keypair,
+  dest: PublicKey,
+  lamports: number,
+  label: string
+): Promise<string> {
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: payer.publicKey,
+      toPubkey: dest,
+      lamports,
+    })
+  );
+  return sendTx(connection, tx, payer, label);
+}
+
+export async function waitRows<T>(
+  run: () => Promise<T[]>,
+  n: number,
+  label: string
+): Promise<T[]> {
+  let last = new Error(`${label}: no attempt`);
+  for (let i = 0; i < 30; i++) {
+    try {
+      const rows = await run();
+      if (rows.length >= n) {
+        return rows;
+      }
+      last = new Error(`${label}: got ${rows.length} rows`);
+    } catch (err) {
+      last = err instanceof Error ? err : new Error(String(err));
+    }
+    await sleep(2000);
+  }
+  throw last;
 }
 
 export async function resolveErTarget(): Promise<{

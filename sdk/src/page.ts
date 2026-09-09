@@ -69,6 +69,9 @@ export function colTypeFromU8(typ: number): ColTypeName {
 }
 
 export function colTypeToAnchor(typ: ColTypeName): Record<string, Record<string, never>> {
+  if (typ === "json") {
+    return { jsonb: {} };
+  }
   return { [typ]: {} };
 }
 

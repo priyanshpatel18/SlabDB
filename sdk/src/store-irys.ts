@@ -11,7 +11,6 @@ import { PAGE_BYTES } from "./types";
 const DEFAULT_GATEWAY = "https://devnet.irys.xyz";
 const IRYS_SOLANA_RPC = "https://api.devnet.solana.com";
 
-const cache = new PageCache();
 let irysHold: Promise<IrysFunder> | null = null;
 
 function loadSecretKey(): Uint8Array {
@@ -43,7 +42,18 @@ async function irysClient(): Promise<IrysFunder> {
   return irysHold;
 }
 
+export type IrysPageStoreOpts = {
+  /** Default is a private cache. Pass a shared cache only when one process owns both put and get. */
+  cache?: PageCache;
+};
+
 export class IrysPageStore implements PageStore {
+  private readonly cache: PageCache;
+
+  constructor(opts: IrysPageStoreOpts = {}) {
+    this.cache = opts.cache ?? new PageCache();
+  }
+
   async put(page: Buffer): Promise<UploadedPage> {
     if (page.length !== PAGE_BYTES) {
       throw new Error(`page must be ${PAGE_BYTES} bytes`);
@@ -72,7 +82,7 @@ export class IrysPageStore implements PageStore {
     if (!receipt?.id) {
       throw new Error("Irys upload returned no id");
     }
-    cache.remember(receipt.id, page);
+    this.cache.remember(receipt.id, page);
     return {
       id: receipt.id,
       txid: encodeIrysTxid(receipt.id),
@@ -81,7 +91,7 @@ export class IrysPageStore implements PageStore {
   }
 
   async get(id: string): Promise<Buffer> {
-    const hit = cache.recall(id);
+    const hit = this.cache.recall(id);
     if (hit) {
       return hit;
     }
@@ -97,7 +107,7 @@ export class IrysPageStore implements PageStore {
     if (page.length !== PAGE_BYTES) {
       throw new Error(`Irys page ${id} is ${page.length} bytes, want ${PAGE_BYTES}`);
     }
-    cache.remember(id, page);
+    this.cache.remember(id, page);
     return page;
   }
 }

@@ -7,6 +7,7 @@ export const DOC_PAGES = [
   { slug: "", title: "Overview", file: "README.md" },
   { slug: "sdk", title: "SDK", file: "sdk.md" },
   { slug: "sql", title: "SQL", file: "sql.md" },
+  { slug: "privacy", title: "Privacy", file: "privacy.md" },
   { slug: "skill", title: "AI Dev Skill", file: "skill.md" },
 ] as const;
 

@@ -4,9 +4,10 @@ import { expect } from "chai";
 import {
   GetCommitmentSignature,
 } from "@magicblock-labs/ephemeral-rollups-sdk";
-import { Connection } from "@solana/web3.js";
+import { Connection, Keypair } from "@solana/web3.js";
 import { Slab } from "../target/types/slab";
 import { SlabDb } from "../sdk/src";
+import { ErProvider } from "../sdk/src/er-provider";
 import { IrysPageStore } from "../sdk/src/node";
 import {
   resolveErTarget,
@@ -14,6 +15,8 @@ import {
   requireFundedWallet,
   waitDelegated,
   waitUndelegated,
+  sendLamports,
+  waitRows,
   type Remaining,
 } from "./er-helpers";
 import { nsFrom, sleep } from "./helpers";
@@ -59,7 +62,7 @@ if (process.env.RUN_ER_TESTS !== "1") {
 
       const target = await resolveErTarget();
       remainingAccounts = target.remainingAccounts;
-      erProvider = new anchor.AnchorProvider(
+      erProvider = new ErProvider(
         new Connection(target.erUrl, {
           wsEndpoint: process.env.EPHEMERAL_WS_ENDPOINT || undefined,
           commitment: "confirmed",
@@ -104,6 +107,103 @@ if (process.env.RUN_ER_TESTS !== "1") {
       expect(rows[0].body).to.equal("er db note");
     });
 
+    it("second session SELECT fetches the Irys page with an empty cache", async () => {
+      const other = new SlabDb({
+        program,
+        programEr,
+        wallet: wallet.publicKey,
+        ns,
+        store: new IrysPageStore(),
+        remainingAccounts,
+      });
+      const rows = await waitRows(
+        () => other.exec("SELECT * FROM notes WHERE id = 1"),
+        1,
+        "second session SELECT"
+      );
+      expect(rows[0].author).to.equal("ada");
+      expect(rows[0].body).to.equal("er db note");
+    });
+
+    it("GRANT lets a second wallet INSERT on the ER and denies a stranger", async () => {
+      const writerKp = Keypair.generate();
+      const strangerKp = Keypair.generate();
+      await sendLamports(
+        baseProvider.connection,
+        wallet.payer,
+        writerKp.publicKey,
+        80_000_000,
+        "fund writer on base"
+      );
+      await sendLamports(
+        baseProvider.connection,
+        wallet.payer,
+        strangerKp.publicKey,
+        80_000_000,
+        "fund stranger on base"
+      );
+      await sleep(2000);
+
+      const dbFor = (kp: Keypair) => {
+        const w = new anchor.Wallet(kp);
+        const baseP = new anchor.AnchorProvider(baseProvider.connection, w, {
+          commitment: "confirmed",
+        });
+        const erP = new ErProvider(erProvider.connection, w, {
+          commitment: "processed",
+          skipPreflight: true,
+        });
+        return new SlabDb({
+          program: new Program<Slab>(
+            (workspaceProgram as Program<Slab> & { rawIdl?: typeof workspaceProgram.idl })
+              .rawIdl ?? workspaceProgram.idl,
+            baseP
+          ),
+          programEr: new Program<Slab>(
+            (workspaceProgram as Program<Slab> & { rawIdl?: typeof workspaceProgram.idl })
+              .rawIdl ?? workspaceProgram.idl,
+            erP
+          ),
+          wallet: kp.publicKey,
+          owner: wallet.publicKey,
+          ns,
+          store,
+          remainingAccounts,
+        });
+      };
+
+      const writer = dbFor(writerKp);
+      const stranger = dbFor(strangerKp);
+      const denied =
+        /no GRANT|NotGranted|not granted|6016|0x1780|did not decode the program error/i;
+
+      try {
+        await writer.exec(
+          "INSERT INTO notes (id, author, body) VALUES (2, 'ada', 'granted')"
+        );
+        expect.fail("writer INSERT before GRANT should fail");
+      } catch (err) {
+        expect(String(err instanceof Error ? err.message : err)).to.match(denied);
+      }
+
+      await db.exec(`GRANT ${writerKp.publicKey.toBase58()}`);
+      await writer.exec(
+        "INSERT INTO notes (id, author, body) VALUES (2, 'ada', 'granted')"
+      );
+      const rows = await db.exec("SELECT * FROM notes WHERE id = 2");
+      expect(rows).to.have.length(1);
+      expect(rows[0].body).to.equal("granted");
+
+      try {
+        await stranger.exec(
+          "INSERT INTO notes (id, author, body) VALUES (3, 'cam', 'nope')"
+        );
+        expect.fail("stranger INSERT should fail");
+      } catch (err) {
+        expect(String(err instanceof Error ? err.message : err)).to.match(denied);
+      }
+    });
+
     it("UPDATE on the ER then SELECT", async () => {
       await db.exec("UPDATE notes SET body = 'er edited' WHERE id = 1");
       const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
@@ -112,19 +212,12 @@ if (process.env.RUN_ER_TESTS !== "1") {
     });
 
     it("undelegate then SELECT on base", async () => {
-      const extra = db.extraCommitAccounts({
-        oid: 1,
-        name: "notes",
-        pkAttr: 0,
-        idxMask: 1,
-        nPages: 1,
-        nTuples: 1,
-        columns: [
-          { name: "id", typ: "int8", notNull: true },
-          { name: "author", typ: "text", notNull: true },
-          { name: "body", typ: "text", notNull: true },
-        ],
-      });
+      const cat = await db.catalog();
+      const notes = cat.rels.find((rel) => rel.name === "notes");
+      if (!notes) {
+        throw new Error("notes missing before commit");
+      }
+      const extra = db.extraCommitAccounts(notes);
       const commitSig = await db.commit(extra);
       await GetCommitmentSignature(commitSig, erProvider.connection);
       const undelegateSig = await db.undelegate(extra);

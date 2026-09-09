@@ -1,8 +1,9 @@
 import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { expect } from "chai";
+import { Keypair, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { Slab } from "../target/types/slab";
-import { MemoryPageStore, SlabDb, decodeCatalog, parseSql, bindSql, isLegacyLocalPageId } from "../sdk/src";
+import { MemoryPageStore, SlabDb, decodeCatalog, parseSql, bindSql, isLegacyLocalPageId, formatProgramError } from "../sdk/src";
 import { nsFrom } from "./helpers";
 
 if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
@@ -22,6 +23,42 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
       ns,
       store,
     });
+
+    async function airdrop(kp: Keypair) {
+      const sig = await provider.connection.requestAirdrop(
+        kp.publicKey,
+        2 * LAMPORTS_PER_SOL
+      );
+      const latest = await provider.connection.getLatestBlockhash("confirmed");
+      await provider.connection.confirmTransaction(
+        { signature: sig, ...latest },
+        "confirmed"
+      );
+    }
+
+    function clientFor(kp: Keypair, pageStore = store): SlabDb {
+      const writerWallet = new anchor.Wallet(kp);
+      const writerProvider = new anchor.AnchorProvider(
+        provider.connection,
+        writerWallet,
+        { commitment: "confirmed" }
+      );
+      const idl = (program as Program<Slab> & { rawIdl?: typeof program.idl })
+        .rawIdl ?? program.idl;
+      const writerProgram = new Program<Slab>(idl, writerProvider);
+      return new SlabDb({
+        program: writerProgram,
+        wallet: kp.publicKey,
+        owner: provider.wallet.publicKey,
+        ns,
+        store: pageStore,
+      });
+    }
+
+    function expectDenied(err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      expect(msg).to.match(/NotGranted|no GRANT|not granted/i);
+    }
 
     it("parses v0 SQL and rejects JOIN", () => {
       const create = parseSql(
@@ -70,6 +107,19 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
           "bytea",
         ]);
       }
+      const grantPk = "7dcFLm6QsT8Zo7MAXQFrmJaDDxf5RDZb7VuiHupuiNwZ";
+      const grant = parseSql(`GRANT ${grantPk}`);
+      expect(grant.kind).to.equal("grant");
+      if (grant.kind === "grant") {
+        expect(grant.grantee).to.equal(grantPk);
+      }
+      const revoke = parseSql(`REVOKE ${grantPk};`);
+      expect(revoke.kind).to.equal("revoke");
+      expect(
+        formatProgramError({
+          error: { InstructionError: [0, { Custom: 6016 }] },
+        })
+      ).to.match(/no GRANT/i);
       const listed = parseSql(
         "SELECT author, body FROM notes WHERE id = 1 ORDER BY author DESC LIMIT 2 OFFSET 0"
       );
@@ -287,6 +337,73 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
       }
       expect(created.oid).to.equal(before.nextOid);
       expect(created.oid).to.not.equal(droppedOid);
+    });
+
+    it("second SlabDb SELECT uses the shared page store, not client memory", async () => {
+      await db.exec(
+        "CREATE TABLE sessions (id int8 PRIMARY KEY, author text NOT NULL)"
+      );
+      await db.exec("INSERT INTO sessions (id, author) VALUES (1, 'ada')");
+      const other = new SlabDb({
+        program,
+        wallet: provider.wallet.publicKey,
+        ns,
+        store,
+      });
+      const rows = await other.exec("SELECT * FROM sessions WHERE id = 1");
+      expect(rows).to.have.length(1);
+      expect(rows[0].author).to.equal("ada");
+      const blank = new SlabDb({
+        program,
+        wallet: provider.wallet.publicKey,
+        ns,
+        store: new MemoryPageStore(),
+      });
+      try {
+        await blank.exec("SELECT * FROM sessions WHERE id = 1");
+        expect.fail("SELECT with an empty store should fail");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        expect(msg).to.match(
+          /memory page store has no id|Irys GET|UnreadablePage|SHA-256|local .*pointer/i
+        );
+      }
+    });
+
+    it("GRANT lets a second wallet INSERT and denies a stranger", async () => {
+      await db.exec(
+        "CREATE TABLE grants (id int8 PRIMARY KEY, author text NOT NULL)"
+      );
+      const writerKp = Keypair.generate();
+      const strangerKp = Keypair.generate();
+      await airdrop(writerKp);
+      await airdrop(strangerKp);
+      const writer = clientFor(writerKp);
+      const stranger = clientFor(strangerKp);
+      try {
+        await writer.exec("INSERT INTO grants (id, author) VALUES (1, 'ada')");
+        expect.fail("writer INSERT before GRANT should fail");
+      } catch (err) {
+        expectDenied(err);
+      }
+      await db.exec(`GRANT ${writerKp.publicKey.toBase58()}`);
+      await writer.exec("INSERT INTO grants (id, author) VALUES (1, 'ada')");
+      try {
+        await stranger.exec("INSERT INTO grants (id, author) VALUES (2, 'cam')");
+        expect.fail("stranger INSERT should fail");
+      } catch (err) {
+        expectDenied(err);
+      }
+      const rows = await db.exec("SELECT * FROM grants WHERE id = 1");
+      expect(rows).to.have.length(1);
+      expect(rows[0].author).to.equal("ada");
+      await db.exec(`REVOKE ${writerKp.publicKey.toBase58()}`);
+      try {
+        await writer.exec("INSERT INTO grants (id, author) VALUES (3, 'ada')");
+        expect.fail("writer INSERT after revoke should fail");
+      } catch (err) {
+        expectDenied(err);
+      }
     });
 
     it("realloc_catalog grows capacity to 32", async () => {

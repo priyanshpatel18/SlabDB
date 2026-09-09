@@ -27,13 +27,13 @@ The user owns the embedded wallet. **Enable agent** adds the key quorum as a sec
 
 ## v0 SQL
 
-`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`. PK `WHERE`. Secondary index `WHERE` after `CREATE INDEX` (no backfill). No JOIN, BEGIN, or COPY.
+`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`. PK `WHERE`. Secondary index `WHERE` after `CREATE INDEX` (backfills existing rows). No JOIN, BEGIN, or COPY.
 
-Types: bool, int4, int8, text ≤ 1 KiB, timestamptz.
+Types: bool, int4, int8, text ≤ 4 KiB, timestamptz, uuid, float8, json, bytea.
 
-Accounts: `Slab`, `Catalog`, `PagePtr`, `Index`. Init creates 16 table slots. `realloc_catalog` on L1 grows the catalog to 32. Do that before delegate.
+Accounts: `Slab`, `Catalog`, `PagePtr`, `Index`, `Grant`. Init creates 16 table slots. `realloc_catalog` on L1 grows the catalog to 32. Do that before delegate.
 
-Console write-ack: Irys receipt id in the PagePtr. INSERT uploads the 8 KiB page and waits for the gateway so other wallets can SELECT. Local tests may use a fixture TXID. Fund Irys if the bundler has no balance.
+Console write-ack: Irys receipt id in the PagePtr. INSERT uploads the 8 KiB page. Other wallets SELECT from the Irys gateway. Pages are public. Fund Irys if the bundler has no balance.
 
 ## SDK
 

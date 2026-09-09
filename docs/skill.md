@@ -59,5 +59,6 @@ Do not confirm this ER tx on L1 lastValidBlockHeight
 - Do not put Helius keys in the client
 - `Slab.connect({ wallet, ns })` from `slabdb/web` or `slabdb/node`
 - Parameterized SQL, LIMIT / ORDER BY, uuid / float8 / json / bytea
-- Shared catalog via `owner` + `GRANT`
+- Shared catalog via `owner` + `GRANT` (`GRANT <pubkey>` in SQL or the console Writers panel)
 - SHA-256 page recovery with `UnreadablePageError` / `resetTable`
+- Irys pages are public. Private ER is not in this product yet.

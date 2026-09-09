@@ -61,11 +61,11 @@ const player = await Slab.connect({
 await player.exec("INSERT INTO scores (id, pts) VALUES ($1, $2)", [id, 10]);
 ```
 
-`CREATE TABLE`, `DROP TABLE`, `GRANT`, and delegate stay with the owner.
+`CREATE TABLE`, `DROP TABLE`, `GRANT`, and delegate stay with the owner. `SELECT` does not need a grant. Pages on Irys are public. See `docs/privacy.md`.
 
 ## v0 SQL
 
-`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`.
+`CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`, `GRANT <pubkey>`, `REVOKE <pubkey>`.
 
 Types: bool, int4, int8, text (max 4 KiB), timestamptz, uuid, float8, json, bytea.
 

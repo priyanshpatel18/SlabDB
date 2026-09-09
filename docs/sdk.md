@@ -50,6 +50,8 @@ const player = await Slab.connect({
 });
 ```
 
+The owner can also run `GRANT <pubkey>` and `REVOKE <pubkey>` through `db.exec`.
+
 ## Recovery
 
 SHA-256 page pointers from the old in-tab store cannot be fetched. Catch `UnreadablePageError` or call `db.resetTable("users")`, then `INSERT` again.
