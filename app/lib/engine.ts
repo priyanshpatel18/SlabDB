@@ -101,6 +101,12 @@ export class MemoryCatalog {
       );
       return { rows: [], message: `DELETE ${before - rel.rows.length}` };
     }
+    if (ast.kind === "grant") {
+      return { rows: [], message: `GRANT ${ast.grantee} (local preview)` };
+    }
+    if (ast.kind === "revoke") {
+      return { rows: [], message: `REVOKE ${ast.grantee} (local preview)` };
+    }
     const rel = this.must(ast.table);
     let rows = rel.rows;
     if (ast.where) {
