@@ -12,7 +12,7 @@ SQL-native storage for onchain data. Indexes run on a MagicBlock public Ephemera
 ## Pages
 
 - [Home](/): product
-- [Console](/console): SQL workstation (v0 subset)
+- [Console](/console): SQL workstation. Isolation is slab + wallet + ns.
 
 ## Do not confuse with
 

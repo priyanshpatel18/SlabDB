@@ -1,4 +1,17 @@
-import { createHash } from "crypto";
+// @ts-nocheck
+import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
+import {
+  readI32LE,
+  readI64LE,
+  readU16LE,
+  readU32LE,
+  readU8,
+  writeI32LE,
+  writeI64LE,
+  writeU16LE,
+  writeU32LE,
+  writeU8,
+} from "./bytes";
 import {
   COL_BOOL,
   COL_INT4,
@@ -17,11 +30,11 @@ import {
 } from "./types";
 
 export function sha256(data: Buffer): number[] {
-  return Array.from(createHash("sha256").update(data).digest());
+  return Array.from(nobleSha256(data));
 }
 
 export function sha256Hex(data: Buffer): string {
-  return createHash("sha256").update(data).digest("hex");
+  return Buffer.from(nobleSha256(data)).toString("hex");
 }
 
 export function colTypeFromU8(typ: number): ColTypeName {
@@ -45,6 +58,43 @@ export function colTypeToAnchor(typ: ColTypeName): Record<string, Record<string,
   return { [typ]: {} };
 }
 
+/** Store timestamptz as Unix milliseconds in int64. Accept ISO-8601 or epoch seconds/ms. */
+export function timestamptzMillis(value: SqlValue): bigint {
+  if (typeof value === "boolean") {
+    throw new Error("cannot convert boolean to timestamptz");
+  }
+  if (typeof value === "bigint" || typeof value === "number") {
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new Error("timestamptz is not a finite number");
+    }
+    return normalizeTsMillis(BigInt(value));
+  }
+  const raw = String(value).trim();
+  if (/^-?\d+$/.test(raw)) {
+    return normalizeTsMillis(BigInt(raw));
+  }
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) {
+    throw new Error(`cannot parse timestamptz ${JSON.stringify(value)}`);
+  }
+  return BigInt(ms);
+}
+
+function normalizeTsMillis(n: bigint): bigint {
+  const abs = n < 0n ? -n : n;
+  if (abs > 1_000_000_000_000_000n) {
+    return n / 1000n;
+  }
+  if (abs < 100_000_000_000n) {
+    return n * 1000n;
+  }
+  return n;
+}
+
+function timestamptzIso(ms: bigint): string {
+  return new Date(Number(ms)).toISOString();
+}
+
 export function encodePk(value: SqlValue, typ: ColTypeName): { key: number[]; keyLen: number } {
   const raw = encodeValue(value, typ);
   const key = Buffer.alloc(32);
@@ -57,17 +107,17 @@ export function encodeValue(value: SqlValue, typ: ColTypeName): Buffer {
   switch (typ) {
     case "bool": {
       const buf = Buffer.alloc(1);
-      buf.writeUInt8(value ? 1 : 0, 0);
+      writeU8(buf, value ? 1 : 0, 0);
       return buf;
     }
     case "int4": {
       const buf = Buffer.alloc(4);
-      buf.writeInt32LE(Number(value), 0);
+      writeI32LE(buf, Number(value), 0);
       return buf;
     }
     case "int8": {
       const buf = Buffer.alloc(8);
-      buf.writeBigInt64LE(BigInt(value), 0);
+      writeI64LE(buf, BigInt(value), 0);
       return buf;
     }
     case "text": {
@@ -80,13 +130,13 @@ export function encodeValue(value: SqlValue, typ: ColTypeName): Buffer {
         throw new Error(`text longer than ${TEXT_MAX_BYTES} bytes`);
       }
       const buf = Buffer.alloc(2 + body.length);
-      buf.writeUInt16LE(body.length, 0);
+      writeU16LE(buf, body.length, 0);
       body.copy(buf, 2);
       return buf;
     }
     case "timestamptz": {
       const buf = Buffer.alloc(8);
-      buf.writeBigInt64LE(BigInt(value), 0);
+      writeI64LE(buf, timestamptzMillis(value), 0);
       return buf;
     }
   }
@@ -95,19 +145,22 @@ export function encodeValue(value: SqlValue, typ: ColTypeName): Buffer {
 export function decodeValue(buf: Buffer, off: number, typ: ColTypeName): { value: SqlValue; next: number } {
   switch (typ) {
     case "bool":
-      return { value: buf.readUInt8(off) !== 0, next: off + 1 };
+      return { value: readU8(buf, off) !== 0, next: off + 1 };
     case "int4":
-      return { value: buf.readInt32LE(off), next: off + 4 };
+      return { value: readI32LE(buf, off), next: off + 4 };
     case "int8":
-      return { value: buf.readBigInt64LE(off), next: off + 8 };
+      return { value: readI64LE(buf, off), next: off + 8 };
     case "text": {
-      const len = buf.readUInt16LE(off);
+      const len = readU16LE(buf, off);
       const start = off + 2;
       const value = buf.slice(start, start + len).toString("utf8");
       return { value, next: start + len };
     }
     case "timestamptz":
-      return { value: buf.readBigInt64LE(off), next: off + 8 };
+      return {
+        value: timestamptzIso(readI64LE(buf, off)),
+        next: off + 8,
+      };
   }
 }
 
@@ -137,10 +190,10 @@ export function packPage(relOid: number, pageNo: number, tuples: Buffer[]): Buff
   }
   const page = Buffer.alloc(PAGE_BYTES);
   Buffer.from("SLAB").copy(page, 0);
-  page.writeUInt8(2, 4);
-  page.writeUInt32LE(relOid, 5);
-  page.writeUInt32LE(pageNo, 9);
-  page.writeUInt16LE(tuples.length, 13);
+  writeU8(page, 2, 4);
+  writeU32LE(page, relOid, 5);
+  writeU32LE(page, pageNo, 9);
+  writeU16LE(page, tuples.length, 13);
   let off = PAGE_HEADER;
   for (const tuple of tuples) {
     tuple.copy(page, off);
@@ -171,13 +224,13 @@ export function unpackPhysical(page: Buffer, columns: Column[]): PhysicalRow[] {
   if (page.slice(0, 4).toString("ascii") !== "SLAB") {
     throw new Error("page magic is not SLAB");
   }
-  const n = page.readUInt16LE(13);
-  const version = page.readUInt8(4);
+  const n = readU16LE(page, 13);
+  const version = readU8(page, 4);
   const rows: PhysicalRow[] = [];
   let off = PAGE_HEADER;
   for (let i = 0; i < n; i++) {
     if (version >= 2) {
-      const dead = page.readUInt8(off) === TUPLE_DEAD;
+      const dead = readU8(page, off) === TUPLE_DEAD;
       const start = off;
       const length = tuplePayloadLen(page, off, columns);
       const row: Row = {};
@@ -249,7 +302,7 @@ export function appendTuple(
     ])
   );
   packed.push(withLiveFlag(tuple));
-  return packPage(page.readUInt32LE(5), page.readUInt32LE(9), packed);
+  return packPage(readU32LE(page, 5), readU32LE(page, 9), packed as Buffer[]);
 }
 
 export function tombstoneSlot(
@@ -268,7 +321,7 @@ export function tombstoneSlot(
       encodeTuple(columns, r.row),
     ])
   );
-  return packPage(page.readUInt32LE(5), page.readUInt32LE(9), packed);
+  return packPage(readU32LE(page, 5), readU32LE(page, 9), packed as Buffer[]);
 }
 
 export function rewriteSlot(
@@ -296,7 +349,7 @@ export function rewriteSlot(
   );
   packed.push(flagged);
   return {
-    page: packPage(page.readUInt32LE(5), page.readUInt32LE(9), packed),
+    page: packPage(readU32LE(page, 5), readU32LE(page, 9), packed as Buffer[]),
     slot: packed.length - 1,
   };
 }

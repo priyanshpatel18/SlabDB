@@ -1,7 +1,8 @@
 export { SlabDb } from "./db";
 export type { Remaining, SlabDbOpts } from "./db";
 export { parseSql } from "./sql";
-export { MemoryPageStore, IrysPageStore } from "./store";
+export { MemoryPageStore } from "./store";
+export { IrysPageStore } from "./store-irys";
 export type { PageStore, UploadedPage } from "./store";
 export {
   packPage,

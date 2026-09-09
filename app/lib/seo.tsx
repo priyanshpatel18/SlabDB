@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { site, SEO_KEYWORDS } from "@/lib/site";
 
+const stripTrailingSlash = (url: string) => url.replace(/\/+$/, "");
+
 const getBaseURL = () => {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  if (process.env.NEXT_PUBLIC_SITE_URL)
+    return stripTrailingSlash(process.env.NEXT_PUBLIC_SITE_URL);
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
     return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -12,6 +15,13 @@ const getBaseURL = () => {
 };
 
 export const BASE_URL = getBaseURL();
+
+export function absoluteUrl(path = "/"): string {
+  const base = stripTrailingSlash(BASE_URL);
+  if (!path || path === "/") return base;
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${stripTrailingSlash(normalized)}`;
+}
 
 export const getSEOTags = ({
   title,
@@ -26,6 +36,9 @@ export const getSEOTags = ({
 } = {}): Metadata => {
   const resolvedTitle = title || site.appName;
   const resolvedDescription = description || site.appDescription;
+  const pageUrl = absoluteUrl(canonicalUrlRelative || "/");
+  const ogUrl =
+    typeof openGraph?.url === "string" ? openGraph.url : pageUrl;
 
   return {
     title: resolvedTitle,
@@ -37,7 +50,7 @@ export const getSEOTags = ({
     openGraph: {
       title: openGraph?.title || resolvedTitle,
       description: openGraph?.description || resolvedDescription,
-      url: openGraph?.url || BASE_URL,
+      url: ogUrl,
       siteName: site.appName,
       locale: "en_US",
       type: "website",
@@ -48,7 +61,7 @@ export const getSEOTags = ({
       description: openGraph?.description || resolvedDescription,
     },
     ...(canonicalUrlRelative
-      ? { alternates: { canonical: canonicalUrlRelative } }
+      ? { alternates: { canonical: pageUrl } }
       : {}),
     ...extraTags,
   };
@@ -69,7 +82,7 @@ export const renderSchemaTags = ({
   applicationCategory = "DeveloperApplication",
   operatingSystem = "Web",
 }: SchemaTagsProps = {}) => {
-  const url = `${BASE_URL}${path}`;
+  const url = absoluteUrl(path);
   const schema = {
     "@context": "https://schema.org",
     "@graph": [
@@ -77,7 +90,7 @@ export const renderSchemaTags = ({
         "@type": "Organization",
         name: site.appName,
         url: BASE_URL,
-        logo: `${BASE_URL}/icon.svg`,
+        logo: absoluteUrl("/icon.svg"),
       },
       {
         "@type": "WebSite",
@@ -89,7 +102,7 @@ export const renderSchemaTags = ({
         "@type": "SoftwareApplication",
         name,
         description,
-        image: `${BASE_URL}/opengraph-image`,
+        image: absoluteUrl("/opengraph-image"),
         url,
         author: {
           "@type": "Organization",

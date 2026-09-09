@@ -67,12 +67,18 @@ export class MemoryCatalog {
     if (ast.kind === "insert") {
       const rel = this.must(ast.table);
       const names = ast.columns ?? rel.columns.map((c) => c.name);
-      const row: Row = {};
-      names.forEach((n, i) => {
-        row[n] = ast.values[i];
-      });
-      rel.rows.push(row);
-      return { rows: [], message: `INSERT 1 into ${rel.name}` };
+      const batches = ast.rows ?? [ast.values];
+      for (const values of batches) {
+        const row: Row = {};
+        names.forEach((n, i) => {
+          row[n] = values[i];
+        });
+        rel.rows.push(row);
+      }
+      return {
+        rows: [],
+        message: `INSERT ${batches.length} into ${rel.name}`,
+      };
     }
     if (ast.kind === "update") {
       const rel = this.must(ast.table);

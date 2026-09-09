@@ -6,13 +6,24 @@ Program: [`58AARMgjnefMz59oCc4WpnqCmpuR92FfQtNk7mV2Sxet`](https://explorer.solan
 
 ## App
 
-Landing and `/console` live in `app/`. The console runs the v0 SQL subset in the browser (`MemoryCatalog`). It does not write Irys pages yet. The wallet signs later writes.
+Landing and `/console` live in `app/`. Sign in with Privy (email or Google). Slab always uses the Privy Solana embedded wallet. External wallets are off. CREATE TABLE and delegate run on base. INSERT packs an 8 KiB page in the tab, then sends `execInsert` to the public ER (`skipPreflight`, processed). Do not confirm that tx on L1. After you enable the agent signer, INSERT is signed by the app authorization key (dual signer) with no wallet popup.
 
 ```bash
 cd app && bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Host `app/` on Vercel. Do not put Helius keys in the Next.js client. Wallet RPC is `https://rpc.magicblock.app/devnet`.
+
+## Privy
+
+Set `NEXT_PUBLIC_PRIVY_APP_ID` in `app/.env.local`. In the Privy Dashboard:
+
+1. Login methods: email and Google. Do not enable wallet login.
+2. Embedded wallets: Solana create on login for all users. Ethereum off.
+3. Authorization keys: register a P-256 key quorum. Put the quorum id in `NEXT_PUBLIC_PRIVY_SIGNER_ID`. Put the private key in `PRIVY_AUTHORIZATION_KEY`. Put the app secret in `PRIVY_APP_SECRET`.
+4. Enable signers / server-side access for the app.
+
+The user owns the embedded wallet. **Enable agent** adds the key quorum as a second signer. After that, SQL writes sign through `/api/agent/sign` and send to the ER.
 
 ## v0 SQL
 
@@ -22,7 +33,7 @@ Types: bool, int4, int8, text ≤ 1 KiB, timestamptz.
 
 Accounts: `Slab`, `Catalog`, `PagePtr`, `Index`. Init creates 16 table slots. `realloc_catalog` on L1 grows the catalog to 32. Do that before delegate.
 
-Write-ack: upload the 8 KiB page to Irys, wait for the gateway, then `INSERT`. Local tests may use a fixture TXID.
+Console write-ack: SHA-256 hex id in the PagePtr (valid Irys-shaped ASCII). Bytes stay in session storage for this tab. Local tests may use a fixture TXID. Optional Fund Irys prepays the bundler for later durable upload.
 
 ## Client
 
@@ -41,7 +52,7 @@ const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
 
 `INSERT` writes one row. A full page calls `prepare_page` for the next page. PK `WHERE` uses the on-chain index. `CREATE INDEX` then `WHERE col =` uses a secondary `Index` PDA. Other `WHERE` clauses scan pages in the store. `UPDATE` / `DELETE` rewrite the Irys page, then update the pointer and index. `DROP TABLE` frees the catalog slot. Oids are not reused.
 
-`CREATE TABLE` stays on L1. After delegate, `INSERT` / `UPDATE` / `SELECT` go to the ER with `programEr` and `IrysPageStore`.
+`CREATE TABLE` stays on L1. After delegate, `INSERT` / `UPDATE` / `SELECT` go to the ER with `programEr` and a session page store.
 
 ## Routing
 

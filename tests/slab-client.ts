@@ -36,9 +36,33 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
       expect(drop.kind).to.equal("drop");
       const idx = parseSql("CREATE INDEX ON notes (author)");
       expect(idx.kind).to.equal("createIndex");
+      const ins = parseSql(
+        "INSERT INTO users (username, email, createdat) VALUES ('priyansh_ptl18', 'priyansh@thaler.finance', '2026-09-09T08:12:00Z')"
+      );
+      expect(ins.kind).to.equal("insert");
+      if (ins.kind === "insert") {
+        expect(ins.values[2]).to.equal("2026-09-09T08:12:00Z");
+        expect(ins.rows).to.have.length(1);
+      }
+      const multi = parseSql(
+        "INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'a'), (2, 'bob', 'b')"
+      );
+      expect(multi.kind).to.equal("insert");
+      if (multi.kind === "insert") {
+        expect(multi.rows).to.have.length(2);
+      }
+      const varchar = parseSql(
+        "CREATE TABLE users (id integer PRIMARY KEY, name varchar(64) NOT NULL)"
+      );
+      expect(varchar.kind).to.equal("create");
+      if (varchar.kind === "create") {
+        expect(varchar.columns[1].typ).to.equal("text");
+      }
       expect(() => parseSql("SELECT * FROM a JOIN b ON a.id = b.id")).to.throw(
         /v0 SQL subset/
       );
+      expect(() => parseSql("BEGIN")).to.throw(/v0 SQL subset/);
+      expect(() => parseSql("COPY t FROM STDIN")).to.throw(/v0 SQL subset/);
     });
 
     it("CREATE TABLE + INSERT row + SELECT returns the row", async () => {

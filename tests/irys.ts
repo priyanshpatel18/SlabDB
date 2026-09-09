@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { homedir } from "os";
-import { PAGE_BYTES, DEFAULT_DEVNET_RPC, encodeIrysTxid, sha256, sleep } from "./helpers";
+import { PAGE_BYTES, encodeIrysTxid, sha256, sleep } from "./helpers";
 
 const DEFAULT_GATEWAY = "https://devnet.irys.xyz";
 
@@ -49,11 +49,11 @@ export async function uploadPage(page: Buffer): Promise<UploadedPage> {
   const { Uploader } = await import("@irys/upload");
   const { Solana } = await import("@irys/upload-solana");
 
-  const rpc =
-    process.env.IRYS_RPC_URL || process.env.SLAB_BASE_RPC_URL || DEFAULT_DEVNET_RPC;
+  const rpc = process.env.IRYS_RPC_URL || "https://api.devnet.solana.com";
   const irys = await Uploader(Solana)
     .withWallet(loadSecretKey())
     .withRpc(rpc)
+    .withTokenOptions({ finality: "confirmed" })
     .devnet();
 
   const price = await irys.getPrice(page.length);

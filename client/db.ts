@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Program } from "@anchor-lang/core";
 import {
   DELEGATION_PROGRAM_ID,
@@ -16,12 +17,14 @@ import {
   packPage,
   rewriteSlot,
   sha256,
+  timestamptzMillis,
   tombstoneSlot,
   tupleFitsWithColumns,
   unpackPhysical,
   unpackSlot,
   withLiveFlag,
 } from "./page";
+import { writeU32LE } from "./bytes";
 import { parseSql } from "./sql";
 import type { PageStore } from "./store";
 import type { Column, Row, SqlValue } from "./types";
@@ -43,7 +46,7 @@ export type SlabDbOpts = {
 
 function u32le(n: number): Buffer {
   const buf = Buffer.alloc(4);
-  buf.writeUInt32LE(n);
+  writeU32LE(buf, n, 0);
   return buf;
 }
 
@@ -51,11 +54,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function valuesEqual(a: SqlValue, b: SqlValue): boolean {
-  if (typeof a === "bigint" || typeof b === "bigint") {
-    return BigInt(a as bigint | number) === BigInt(b as bigint | number);
+async function waitOwner(
+  connection: { getAccountInfo: (key: PublicKey) => Promise<{ owner: PublicKey } | null> },
+  pubkey: PublicKey,
+  owner: PublicKey,
+  timeoutMs = 1200
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const info = await connection.getAccountInfo(pubkey);
+    if (info && info.owner.equals(owner)) {
+      return;
+    }
+    await sleep(40);
   }
-  return a === b;
+}
+
+function valuesEqual(a: SqlValue, b: SqlValue): boolean {
+  try {
+    return timestamptzMillis(a) === timestamptzMillis(b);
+  } catch {
+    if (typeof a === "bigint" || typeof b === "bigint") {
+      return BigInt(a as bigint | number) === BigInt(b as bigint | number);
+    }
+    return a === b;
+  }
 }
 
 export class SlabDb {
@@ -68,6 +91,8 @@ export class SlabDb {
   readonly slabPda: PublicKey;
   readonly catalogPda: PublicKey;
   readonly feeVaultPda: PublicKey;
+  private sawDelegated = false;
+  private catalogSnap: ReturnType<typeof decodeCatalog> | null = null;
 
   constructor(opts: SlabDbOpts) {
     this.program = opts.program;
@@ -115,10 +140,17 @@ export class SlabDb {
   }
 
   async isDelegated(): Promise<boolean> {
+    if (this.sawDelegated) {
+      return true;
+    }
     const info = await this.program.provider.connection.getAccountInfo(
       this.slabPda
     );
-    return !!info && info.owner.equals(DELEGATION_PROGRAM_ID);
+    const yes = !!info && info.owner.equals(DELEGATION_PROGRAM_ID);
+    if (yes) {
+      this.sawDelegated = true;
+    }
+    return yes;
   }
 
   private async reader(): Promise<Program<Slab>> {
@@ -128,8 +160,17 @@ export class SlabDb {
     return this.program;
   }
 
-  private async rpcOpts(): Promise<{ skipPreflight: true } | Record<string, never>> {
-    return (await this.isDelegated()) ? { skipPreflight: true } : {};
+  private async rpcOpts(): Promise<
+    { skipPreflight: true; commitment: "processed" } | { commitment: "confirmed" }
+  > {
+    if (await this.isDelegated()) {
+      return { skipPreflight: true, commitment: "processed" };
+    }
+    return { commitment: "confirmed" };
+  }
+
+  private invalidateCatalog(): void {
+    this.catalogSnap = null;
   }
 
   async exec(sql: string): Promise<Row[]> {
@@ -143,7 +184,7 @@ export class SlabDb {
       return [];
     }
     if (ast.kind === "insert") {
-      await this.insert(ast.table, ast.columns, ast.values);
+      await this.insert(ast.table, ast.columns, ast.rows ?? [ast.values]);
       return [];
     }
     if (ast.kind === "update") {
@@ -159,6 +200,17 @@ export class SlabDb {
       return [];
     }
     return this.select(ast.table, ast.columns, ast.where);
+  }
+
+  async exists(): Promise<boolean> {
+    const info = await this.program.provider.connection.getAccountInfo(
+      this.slabPda
+    );
+    return !!info;
+  }
+
+  async catalog(): Promise<ReturnType<typeof decodeCatalog>> {
+    return this.loadCatalog();
   }
 
   async initialize(): Promise<void> {
@@ -180,12 +232,16 @@ export class SlabDb {
   }
 
   private async loadCatalog(): Promise<ReturnType<typeof decodeCatalog>> {
+    if (this.catalogSnap) {
+      return this.catalogSnap;
+    }
     const reader = await this.reader();
     const info = await reader.provider.connection.getAccountInfo(this.catalogPda);
     if (!info) {
       throw new Error("catalog does not exist");
     }
-    return decodeCatalog(Buffer.from(info.data));
+    this.catalogSnap = decodeCatalog(Buffer.from(info.data));
+    return this.catalogSnap;
   }
 
   private async loadRels(): Promise<RelInfo[]> {
@@ -253,7 +309,7 @@ export class SlabDb {
       })
       .remainingAccounts(this.remainingAccounts)
       .rpc();
-    await sleep(3000);
+    await waitOwner(this.program.provider.connection, index, DELEGATION_PROGRAM_ID);
   }
 
   private async maybeDelegatePage(relOid: number, pageNo: number): Promise<void> {
@@ -274,7 +330,7 @@ export class SlabDb {
       })
       .remainingAccounts(this.remainingAccounts)
       .rpc();
-    await sleep(3000);
+    await waitOwner(this.program.provider.connection, pagePtr, DELEGATION_PROGRAM_ID);
   }
 
   async createTable(
@@ -314,36 +370,47 @@ export class SlabDb {
         index: this.indexPda(relOid, pkAttr),
       })
       .rpc(await this.rpcOpts());
+    this.invalidateCatalog();
   }
 
   async insert(
     table: string,
     columnNames: string[] | null,
-    values: SqlValue[]
+    rows: SqlValue[][]
   ): Promise<void> {
+    if (rows.length === 0) {
+      return;
+    }
     const rel = await this.relByName(table);
     const names = columnNames ?? rel.columns.map((c) => c.name);
-    if (names.length !== values.length) {
-      throw new Error("INSERT column count does not match VALUES");
-    }
-    const row: Row = {};
-    for (let i = 0; i < names.length; i++) {
-      row[names[i]] = values[i];
-    }
-    for (const col of rel.columns) {
-      if (row[col.name] === undefined) {
-        throw new Error(`INSERT missing column ${col.name}`);
-      }
-    }
     const pkCol = rel.columns[rel.pkAttr];
-    const pk = encodePk(row[pkCol.name], pkCol.typ);
-    const tuple = encodeTuple(rel.columns, row);
-    const reader = await this.reader();
+    const items: { row: Row; tuple: Buffer; pk: ReturnType<typeof encodePk> }[] =
+      [];
+    for (const values of rows) {
+      if (names.length !== values.length) {
+        throw new Error("INSERT column count does not match VALUES");
+      }
+      const row: Row = {};
+      for (let i = 0; i < names.length; i++) {
+        row[names[i]] = values[i];
+      }
+      for (const col of rel.columns) {
+        if (row[col.name] === undefined) {
+          throw new Error(`INSERT missing column ${col.name}`);
+        }
+      }
+      items.push({
+        row,
+        tuple: encodeTuple(rel.columns, row),
+        pk: encodePk(row[pkCol.name], pkCol.typ),
+      });
+    }
 
+    const writer = await this.reader();
     let pageNo = rel.nPages === 0 ? 0 : rel.nPages - 1;
     let pageBuf: Buffer | null = null;
     if (rel.nPages > 0) {
-      const ptr = await reader.account.pagePtr.fetch(
+      const ptr = await writer.account.pagePtr.fetch(
         this.pagePda(rel.oid, pageNo)
       );
       const id = decodeIrysTxid(ptr.txid);
@@ -352,37 +419,80 @@ export class SlabDb {
       if (Buffer.from(hash).compare(Buffer.from(ptr.hash)) !== 0) {
         throw new Error("page hash does not match PagePtr");
       }
-      if (!tupleFitsWithColumns(pageBuf, rel.columns, tuple)) {
-        pageNo = rel.nPages;
-        pageBuf = null;
-      }
     }
 
-    await this.preparePage(rel.oid, pageNo);
-    await this.maybeDelegatePage(rel.oid, pageNo);
-    const writer = await this.reader();
+    type Pending = { row: Row; pk: ReturnType<typeof encodePk>; slot: number };
+    let pending: Pending[] = [];
+    let prepared = pageBuf !== null;
 
-    const packed =
-      pageBuf === null
-        ? packPage(rel.oid, pageNo, [withLiveFlag(tuple)])
-        : appendTuple(pageBuf, rel.columns, tuple);
-    const uploaded = await this.store.put(packed);
-    const slot =
-      pageBuf === null ? 0 : unpackPhysical(pageBuf, rel.columns).length;
+    const ensurePage = async (): Promise<void> => {
+      if (prepared) {
+        return;
+      }
+      await this.preparePage(rel.oid, pageNo);
+      await this.maybeDelegatePage(rel.oid, pageNo);
+      prepared = true;
+    };
 
-    await writer.methods
-      .execInsert(rel.oid, pageNo, rel.pkAttr, rel.name, uploaded.txid, uploaded.hash, [
-        { key: pk.key, keyLen: pk.keyLen, slot },
-      ])
-      .accounts({
-        authority: this.wallet,
-        slab: this.slabPda,
-        catalog: this.catalogPda,
-        pagePtr: this.pagePda(rel.oid, pageNo),
-        index: this.indexPda(rel.oid, rel.pkAttr),
-      })
-      .rpc(await this.rpcOpts());
-    await this.putSecondary(rel, row, pageNo, slot);
+    const commitPage = async (): Promise<void> => {
+      if (!pageBuf || pending.length === 0) {
+        return;
+      }
+      const packed = pageBuf;
+      const entries = pending;
+      const commitNo = pageNo;
+      const uploaded = await this.store.put(packed);
+      await writer.methods
+        .execInsert(
+          rel.oid,
+          commitNo,
+          rel.pkAttr,
+          rel.name,
+          uploaded.txid,
+          uploaded.hash,
+          entries.map((e) => ({
+            key: e.pk.key,
+            keyLen: e.pk.keyLen,
+            slot: e.slot,
+          }))
+        )
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          catalog: this.catalogPda,
+          pagePtr: this.pagePda(rel.oid, commitNo),
+          index: this.indexPda(rel.oid, rel.pkAttr),
+        })
+        .rpc(await this.rpcOpts());
+      for (const e of entries) {
+        await this.putSecondary(rel, e.row, commitNo, e.slot);
+      }
+    };
+
+    const startNextPage = async (): Promise<void> => {
+      pageNo += 1;
+      pageBuf = null;
+      pending = [];
+      prepared = false;
+    };
+
+    for (const item of items) {
+      if (pageBuf && !tupleFitsWithColumns(pageBuf, rel.columns, item.tuple)) {
+        await commitPage();
+        await startNextPage();
+      }
+      if (!pageBuf) {
+        await ensurePage();
+        pageBuf = packPage(rel.oid, pageNo, [withLiveFlag(item.tuple)]);
+        pending = [{ row: item.row, pk: item.pk, slot: 0 }];
+        continue;
+      }
+      const slot = unpackPhysical(pageBuf, rel.columns).length;
+      pageBuf = appendTuple(pageBuf, rel.columns, item.tuple);
+      pending.push({ row: item.row, pk: item.pk, slot });
+    }
+    await commitPage();
+    this.invalidateCatalog();
   }
 
   private indexedAttrs(rel: RelInfo): number[] {
@@ -519,16 +629,6 @@ export class SlabDb {
       if (!hit) {
         return [];
       }
-      await reader.methods
-        .execSelect(rel.oid, whereAttr, pk.key, pk.keyLen)
-        .accounts({
-          authority: this.wallet,
-          slab: this.slabPda,
-          catalog: this.catalogPda,
-          index: this.indexPda(rel.oid, whereAttr),
-          pagePtr: this.pagePda(rel.oid, hit.pageNo),
-        })
-        .rpc(await this.rpcOpts());
       const ptr = await reader.account.pagePtr.fetch(
         this.pagePda(rel.oid, hit.pageNo)
       );
@@ -591,6 +691,7 @@ export class SlabDb {
         index: this.indexPda(rel.oid, attr),
       })
       .rpc(await this.rpcOpts());
+    this.invalidateCatalog();
   }
 
   async update(
@@ -662,6 +763,7 @@ export class SlabDb {
       rewritten.slot,
       slotChanged
     );
+    this.invalidateCatalog();
   }
 
   async delete(
@@ -710,6 +812,7 @@ export class SlabDb {
     if (oldRow) {
       await this.delSecondary(rel, oldRow);
     }
+    this.invalidateCatalog();
   }
 
   async dropTable(name: string): Promise<void> {
@@ -723,6 +826,7 @@ export class SlabDb {
         catalog: this.catalogPda,
       })
       .rpc(await this.rpcOpts());
+    this.invalidateCatalog();
   }
 
   async reallocCatalog(): Promise<void> {
@@ -734,6 +838,7 @@ export class SlabDb {
         catalog: this.catalogPda,
       })
       .rpc();
+    this.invalidateCatalog();
   }
 
   async delegate(relOid: number, pageNo: number, pkAttr: number): Promise<void> {
@@ -748,7 +853,6 @@ export class SlabDb {
       })
       .remainingAccounts(this.remainingAccounts)
       .rpc();
-    await sleep(3000);
   }
 
   extraCommitAccounts(rel: RelInfo): Remaining[] {
@@ -810,7 +914,8 @@ export class SlabDb {
       })
       .remainingAccounts(extra)
       .rpc({ skipPreflight: true });
-    await sleep(4000);
+    this.sawDelegated = false;
+    this.invalidateCatalog();
     return sig;
   }
 

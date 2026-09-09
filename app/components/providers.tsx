@@ -1,57 +1,30 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
-import {
-  WalletAdapterNetwork,
-  WalletNotReadyError,
-  type Adapter,
-} from "@solana/wallet-adapter-base";
-import {
-  ConnectionProvider,
-  WalletProvider,
-} from "@solana/wallet-adapter-react";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
-import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
-import {
-  SolanaMobileWalletAdapter,
-  createDefaultAddressSelector,
-  createDefaultAuthorizationResultCache,
-  createDefaultWalletNotFoundHandler,
-} from "@solana-mobile/wallet-adapter-mobile";
-import { toast } from "sonner";
+import type { ReactNode } from "react";
+import { PrivyProvider } from "@privy-io/react-auth";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "next-themes";
-import { BASE_RPC_URL, CLUSTER } from "@/lib/cluster";
+import { SlabWalletProvider } from "@/hooks/use-slab-wallet";
+import {
+  PRIVY_ACCENT,
+  PRIVY_APP_ID,
+  PRIVY_CLIENT_ID,
+  privyConfigured,
+} from "@/lib/privy-config";
 
-function makeWallets() {
-  const wallets: Adapter[] = [
-    new PhantomWalletAdapter(),
-    new SolflareWalletAdapter({ network: WalletAdapterNetwork.Devnet }),
-  ];
-
-  if (typeof window === "undefined") return wallets;
-
-  wallets.unshift(
-    new SolanaMobileWalletAdapter({
-      addressSelector: createDefaultAddressSelector(),
-      appIdentity: {
-        name: "Slab",
-        uri: window.location.origin,
-        icon: "/icon.svg",
-      },
-      authorizationResultCache: createDefaultAuthorizationResultCache(),
-      cluster: CLUSTER,
-      onWalletNotFound: createDefaultWalletNotFoundHandler(),
-    }),
+function Inner({ children }: { children: ReactNode }) {
+  return (
+    <SlabWalletProvider>
+      <TooltipProvider>
+        {children}
+        <Toaster />
+      </TooltipProvider>
+    </SlabWalletProvider>
   );
-
-  return wallets;
 }
 
 export function Providers({ children }: { children: ReactNode }) {
-  const wallets = useMemo(() => makeWallets(), []);
-
   return (
     <ThemeProvider
       attribute="class"
@@ -59,21 +32,31 @@ export function Providers({ children }: { children: ReactNode }) {
       defaultTheme="dark"
       enableSystem={false}
     >
-      <ConnectionProvider endpoint={BASE_RPC_URL}>
-        <WalletProvider
-          wallets={wallets}
-          autoConnect
-          onError={(error) => {
-            if (error instanceof WalletNotReadyError) return;
-            toast.error(error.message);
+      {privyConfigured() ? (
+        <PrivyProvider
+          appId={PRIVY_APP_ID}
+          {...(PRIVY_CLIENT_ID ? { clientId: PRIVY_CLIENT_ID } : {})}
+          config={{
+            appearance: {
+              theme: "dark",
+              accentColor: PRIVY_ACCENT,
+              logo: "/icon.svg",
+              walletChainType: "solana-only",
+              showWalletLoginFirst: false,
+            },
+            loginMethods: ["email", "google"],
+            embeddedWallets: {
+              showWalletUIs: false,
+              ethereum: { createOnLogin: "off" },
+              solana: { createOnLogin: "all-users" },
+            },
           }}
         >
-          <TooltipProvider>
-            {children}
-            <Toaster />
-          </TooltipProvider>
-        </WalletProvider>
-      </ConnectionProvider>
+          <Inner>{children}</Inner>
+        </PrivyProvider>
+      ) : (
+        <Inner>{children}</Inner>
+      )}
     </ThemeProvider>
   );
 }

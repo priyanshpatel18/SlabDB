@@ -18,7 +18,8 @@ export function Landing() {
           </h1>
           <p className="mt-6 max-w-[34rem] text-[0.95rem] leading-relaxed text-pretty text-muted-foreground sm:text-base">
             Slab indexes structured data on MagicBlock and persists table pages
-            to Irys. The console runs the v0 subset in this browser.
+            to Irys. The console talks to the program with a Privy embedded
+            wallet.
           </p>
           <div className="mt-8">
             <Link href="/console" className="slab-cta">

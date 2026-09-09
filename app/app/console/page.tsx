@@ -5,7 +5,7 @@ import { getSEOTags } from "@/lib/seo";
 export const metadata: Metadata = getSEOTags({
   title: "Console",
   description:
-    "SQL workstation for Slab. Local preview of the v0 subset in this browser.",
+    "SQL workstation for Slab. CREATE TABLE on base. INSERT on the public ER.",
   canonicalUrlRelative: "/console",
   openGraph: {
     title: "Console | Slab",
