@@ -10,6 +10,7 @@ loadEnvConfig(slabRoot);
 loadEnvConfig(appDir);
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: slabRoot,
   turbopack: {
     root: slabRoot,
     resolveAlias: {
@@ -23,6 +24,8 @@ const nextConfig: NextConfig = {
     "@magicblock-labs/ephemeral-rollups-sdk",
     "@irys/web-upload",
     "@irys/web-upload-solana",
+    "@noble/hashes",
+    "@solana/web3.js",
     "pgsql-ast-parser",
   ],
   webpack: (config) => {
@@ -30,6 +33,13 @@ const nextConfig: NextConfig = {
       ...config.resolve.alias,
       "@/client": path.join(slabRoot, "client"),
     };
+    config.resolve.modules = [
+      path.join(appDir, "node_modules"),
+      path.join(slabRoot, "node_modules"),
+      ...(Array.isArray(config.resolve.modules)
+        ? config.resolve.modules
+        : ["node_modules"]),
+    ];
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,

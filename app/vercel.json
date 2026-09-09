@@ -1,0 +1,3 @@
+{
+  "installCommand": "bun install && bun install --cwd .."
+}
