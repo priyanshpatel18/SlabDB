@@ -27,7 +27,7 @@ import {
 import { writeU32LE } from "./bytes";
 import { createTableSql, dropTableSql, isLegacyLocalPageId, UnreadablePageError } from "./recovery";
 import { parseSql } from "./sql";
-import { formatProgramError } from "./tx-error";
+import { formatProgramError, isAlreadyPrepared } from "./tx-error";
 import type { PageStore } from "./store";
 import type { Column, Row, SqlParam, SqlValue } from "./types";
 
@@ -454,39 +454,60 @@ export class SlabDb {
     return rel;
   }
 
+  private async accountInfo(pubkey: PublicKey) {
+    const base = await this.program.provider.connection.getAccountInfo(pubkey);
+    if (base) {
+      return base;
+    }
+    if (!this.programEr) {
+      return null;
+    }
+    return this.programEr.provider.connection.getAccountInfo(pubkey);
+  }
+
   private async prepareIndex(relOid: number, pkAttr: number): Promise<void> {
     const index = this.indexPda(relOid, pkAttr);
-    const info = await this.program.provider.connection.getAccountInfo(index);
-    if (info) {
+    if (await this.accountInfo(index)) {
       return;
     }
-    await this.program.methods
-      .prepareIndex(relOid, pkAttr)
-      .accounts({
-        authority: this.wallet,
-        slab: this.slabPda,
-        feeVault: this.feeVaultPda,
-        index,
-      })
-      .rpc();
+    try {
+      await this.program.methods
+        .prepareIndex(relOid, pkAttr)
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          feeVault: this.feeVaultPda,
+          index,
+        })
+        .rpc();
+    } catch (err) {
+      if (!isAlreadyPrepared(err)) {
+        throw err;
+      }
+    }
   }
 
   private async preparePage(relOid: number, pageNo: number): Promise<void> {
     const pagePtr = this.pagePda(relOid, pageNo);
-    const info = await this.program.provider.connection.getAccountInfo(pagePtr);
-    if (info) {
+    if (await this.accountInfo(pagePtr)) {
       return;
     }
-    await this.program.methods
-      .preparePage(relOid, pageNo)
-      .accounts({
-        authority: this.wallet,
-        slab: this.slabPda,
-        feeVault: this.feeVaultPda,
-        pagePtr,
-      })
-      .remainingAccounts(this.writerRemaining())
-      .rpc();
+    try {
+      await this.program.methods
+        .preparePage(relOid, pageNo)
+        .accounts({
+          authority: this.wallet,
+          slab: this.slabPda,
+          feeVault: this.feeVaultPda,
+          pagePtr,
+        })
+        .remainingAccounts(this.writerRemaining())
+        .rpc();
+    } catch (err) {
+      if (!isAlreadyPrepared(err)) {
+        throw err;
+      }
+    }
   }
 
   private async maybeDelegateIndex(relOid: number, pkAttr: number): Promise<void> {

@@ -1,4 +1,4 @@
-import { Landing } from "@/components/landing";
+import { HomeGate } from "@/components/home-gate";
 import { renderSchemaTags } from "@/lib/seo";
 
 export default function Home() {
@@ -11,7 +11,7 @@ export default function Home() {
         applicationCategory: "DeveloperApplication",
         operatingSystem: "Web",
       })}
-      <Landing />
+      <HomeGate />
     </>
   );
 }

@@ -18,12 +18,12 @@ export function SiteHeader() {
           >
             Docs
           </Link>
-          <Link
-            href="/console"
-            className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:inline"
-          >
-            Console
-          </Link>
+            <Link
+              href="/console"
+              className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:inline"
+            >
+              Console
+            </Link>
           <WalletButton />
         </nav>
       </div>

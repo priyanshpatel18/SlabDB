@@ -1,7 +1,7 @@
 import type { Components } from "react-markdown";
 import Markdown from "react-markdown";
 
-const components: Components = {
+const docsComponents: Components = {
   h1: ({ children }) => (
     <h1 className="font-display text-3xl italic tracking-tight sm:text-4xl">
       {children}
@@ -55,10 +55,34 @@ const components: Components = {
   ),
 };
 
-export function DocsProse({ source }: { source: string }) {
+const readmeComponents: Components = {
+  ...docsComponents,
+  h1: ({ children }) => (
+    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+      {children}
+    </h1>
+  ),
+  p: ({ children }) => (
+    <p className="mt-4 text-[0.95rem] leading-relaxed text-foreground">
+      {children}
+    </p>
+  ),
+};
+
+export function DocsProse({
+  source,
+  variant = "docs",
+}: {
+  source: string;
+  variant?: "docs" | "readme";
+}) {
   return (
     <article className="max-w-2xl">
-      <Markdown components={components}>{source}</Markdown>
+      <Markdown
+        components={variant === "readme" ? readmeComponents : docsComponents}
+      >
+        {source}
+      </Markdown>
     </article>
   );
 }

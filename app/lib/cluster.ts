@@ -13,6 +13,10 @@ export const IRYS_GATEWAY = "https://devnet.irys.xyz";
 /** Public Solana devnet. Irys bundler cannot see MagicBlock RPC signatures. */
 export const IRYS_RPC_URL = "https://api.devnet.solana.com";
 export const NS_LABEL = "default";
+/** Wallet homepage and file repos. Separate from the SQL console ns. */
+export const HOME_NS = "home";
+export const HOME_REPO = "home";
+export const README_PATH = "README.md";
 
 export function explorerTxUrl(signature: string) {
   return `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`;

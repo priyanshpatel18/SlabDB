@@ -69,3 +69,11 @@ export function isGrantDenied(err: unknown): boolean {
     formatProgramError(err)
   );
 }
+
+/** Page or index PDA already exists. prepare_page / prepare_index is idempotent. */
+export function isAlreadyPrepared(err: unknown): boolean {
+  const text = `${collect(err)}\n${formatProgramError(err)}`;
+  return /InvalidPage|page_no must append|already in use|Custom":\s*6011|Custom:\s*6011|custom program error: 0x177b|error: 6011/i.test(
+    text
+  );
+}
