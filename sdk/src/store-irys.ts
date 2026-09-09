@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { encodeIrysTxid } from "./ids";
 import { type IrysFunder } from "./irys-fund";
 import { sha256 } from "./page";
+import { isLegacyLocalPageId, UnreadablePageError } from "./recovery";
 import { PageCache, type PageStore, type UploadedPage } from "./store";
 import { isIrysUnpaid } from "./timeout";
 import { PAGE_BYTES } from "./types";
@@ -87,6 +88,9 @@ export class IrysPageStore implements PageStore {
     const url = gatewayUrl(id);
     const res = await fetch(url);
     if (!res.ok) {
+      if (isLegacyLocalPageId(id)) {
+        throw new UnreadablePageError({ pageId: id });
+      }
       throw new Error(`Irys GET ${url} failed: ${res.status}`);
     }
     const page = Buffer.from(await res.arrayBuffer());

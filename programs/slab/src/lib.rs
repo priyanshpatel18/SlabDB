@@ -13,14 +13,15 @@ use magicblock_magic_program_api::instruction::MagicBlockInstruction;
 
 use solana_sha256_hasher::hash;
 use constants::{
-    CAT_SEED, COL_BOOL, COL_INT4, COL_INT8, COL_TEXT, COL_TIMESTAMPTZ, FEE_RESERVE_LAMPORTS,
-    FEE_SEED, IDX_SEED, MAGIC_INTENT_LAMPORTS, MAX_COLS, MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE,
-    MAX_TABLES, PAGE_SEED, SLAB_SEED, TXID_LEN, TXID_MIN_LEN,
+    CAT_SEED, COL_BOOL, COL_BYTEA, COL_FLOAT8, COL_INT4, COL_INT8, COL_JSON, COL_TEXT,
+    COL_TIMESTAMPTZ, COL_UUID, FEE_RESERVE_LAMPORTS, FEE_SEED, GRANT_SEED, IDX_SEED,
+    MAGIC_INTENT_LAMPORTS, MAX_COLS, MAX_INDEX_KEYS, MAX_ROWS_PER_TABLE, MAX_TABLES, PAGE_SEED,
+    SLAB_SEED, TXID_LEN, TXID_MIN_LEN,
 };
 use error::SlabError;
 use state::{
     catalog_capacity, catalog_head, catalog_head_mut, catalog_rels, catalog_rels_mut, encode_name,
-    name_eq, rel_index, Attr, Catalog, Index, IndexEntry, PagePtr, Rel, SlabAccount,
+    name_eq, rel_index, Attr, Catalog, Grant, Index, IndexEntry, PagePtr, Rel, SlabAccount,
 };
 
 declare_id!("58AARMgjnefMz59oCc4WpnqCmpuR92FfQtNk7mV2Sxet");
@@ -32,6 +33,10 @@ pub enum ColType {
     Int8,
     Text,
     Timestamptz,
+    Uuid,
+    Float8,
+    Json,
+    Bytea,
 }
 
 impl ColType {
@@ -42,6 +47,10 @@ impl ColType {
             ColType::Int8 => COL_INT8,
             ColType::Text => COL_TEXT,
             ColType::Timestamptz => COL_TIMESTAMPTZ,
+            ColType::Uuid => COL_UUID,
+            ColType::Float8 => COL_FLOAT8,
+            ColType::Json => COL_JSON,
+            ColType::Bytea => COL_BYTEA,
         }
     }
 }
@@ -138,6 +147,20 @@ pub mod slab {
         Ok(())
     }
 
+    /// Owner grants another pubkey INSERT / UPDATE / DELETE on this catalog.
+    pub fn grant_writer(ctx: Context<GrantWriter>) -> Result<()> {
+        let grant = &mut ctx.accounts.grant;
+        grant.slab = ctx.accounts.slab.key();
+        grant.grantee = ctx.accounts.grantee.key();
+        grant.bump = ctx.bumps.grant;
+        Ok(())
+    }
+
+    /// Owner removes a write grant.
+    pub fn revoke_writer(_ctx: Context<RevokeWriter>) -> Result<()> {
+        Ok(())
+    }
+
     /// Create an empty Index PDA on L1. Slab may already be DLP-owned.
     pub fn prepare_index(ctx: Context<PrepareIndex>, rel_oid: u32, pk_attr: u8) -> Result<()> {
         let (ns, _) = load_slab_ignore_owner(
@@ -173,16 +196,19 @@ pub mod slab {
     }
 
     /// Create an empty PagePtr PDA on L1. Call again for page_no 1, 2, …
-    /// Slab may already be DLP-owned.
+    /// Slab may already be DLP-owned. Catalog owner or a granted writer may call this.
     pub fn prepare_page(ctx: Context<PreparePage>, rel_oid: u32, page_no: u32) -> Result<()> {
-        let (ns, _) = load_slab_ignore_owner(
-            &ctx.accounts.slab.to_account_info(),
+        let slab = load_slab_account(&ctx.accounts.slab.to_account_info())?;
+        require_writer(
             ctx.accounts.authority.key,
+            &slab,
+            ctx.accounts.slab.key,
+            ctx.remaining_accounts,
         )?;
         let vault_bump = require_fee_vault(
             &ctx.accounts.fee_vault.to_account_info(),
-            ctx.accounts.authority.key,
-            &ns,
+            &slab.authority,
+            &slab.ns,
         )?;
         let slab_key = ctx.accounts.slab.key();
         let rel_bytes = rel_oid.to_le_bytes();
@@ -191,8 +217,8 @@ pub mod slab {
         create_pda_paid_by_vault(
             ctx.accounts.fee_vault.to_account_info(),
             vault_bump,
-            ctx.accounts.authority.key,
-            &ns,
+            &slab.authority,
+            &slab.ns,
             ctx.accounts.page_ptr.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
             8 + PagePtr::INIT_SPACE,
@@ -662,6 +688,12 @@ pub mod slab {
         page_no: u32,
         entries: Vec<PkSlot>,
     ) -> Result<()> {
+        require_writer(
+            ctx.accounts.authority.key,
+            &ctx.accounts.slab,
+            &ctx.accounts.slab.key(),
+            ctx.remaining_accounts,
+        )?;
         require!(!entries.is_empty(), SlabError::ProgramLimitExceeded);
         {
             let data = ctx.accounts.catalog.try_borrow_data()?;
@@ -712,6 +744,12 @@ pub mod slab {
         attr: u8,
         entries: Vec<PkSlot>,
     ) -> Result<()> {
+        require_writer(
+            ctx.accounts.authority.key,
+            &ctx.accounts.slab,
+            &ctx.accounts.slab.key(),
+            ctx.remaining_accounts,
+        )?;
         require!(!entries.is_empty(), SlabError::ProgramLimitExceeded);
         {
             let data = ctx.accounts.catalog.try_borrow_data()?;
@@ -876,6 +914,44 @@ fn load_slab_ignore_owner(ai: &AccountInfo, authority: &Pubkey) -> Result<([u8; 
     Ok((slab.ns, slab.bump))
 }
 
+fn load_slab_account(ai: &AccountInfo) -> Result<SlabAccount> {
+    let data = ai.try_borrow_data()?;
+    let mut src: &[u8] = &data;
+    let slab = SlabAccount::try_deserialize(&mut src)?;
+    let (expected, _) = Pubkey::find_program_address(
+        &[SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        &crate::ID,
+    );
+    require_keys_eq!(*ai.key, expected, SlabError::Unauthorized);
+    Ok(slab)
+}
+
+fn require_writer(
+    writer: &Pubkey,
+    slab: &SlabAccount,
+    slab_key: &Pubkey,
+    remaining: &[AccountInfo],
+) -> Result<()> {
+    if writer == &slab.authority {
+        return Ok(());
+    }
+    let (expected, _) = Pubkey::find_program_address(
+        &[GRANT_SEED, slab_key.as_ref(), writer.as_ref()],
+        &crate::ID,
+    );
+    let grant_ai = remaining
+        .iter()
+        .find(|a| a.key == &expected)
+        .ok_or_else(|| error!(SlabError::NotGranted))?;
+    require_keys_eq!(*grant_ai.owner, crate::ID, SlabError::NotGranted);
+    let data = grant_ai.try_borrow_data()?;
+    let mut src: &[u8] = &data;
+    let grant = Grant::try_deserialize(&mut src)?;
+    require_keys_eq!(grant.slab, *slab_key, SlabError::NotGranted);
+    require_keys_eq!(grant.grantee, *writer, SlabError::NotGranted);
+    Ok(())
+}
+
 fn require_fee_vault(ai: &AccountInfo, authority: &Pubkey, ns: &[u8; 32]) -> Result<u8> {
     let (expected, bump) =
         Pubkey::find_program_address(&[FEE_SEED, authority.as_ref(), ns.as_ref()], &crate::ID);
@@ -935,6 +1011,12 @@ fn mutate_page(
     removes: &[PkSlot],
     adds: &[PkSlot],
 ) -> Result<()> {
+    require_writer(
+        ctx.accounts.authority.key,
+        &ctx.accounts.slab,
+        &ctx.accounts.slab.key(),
+        ctx.remaining_accounts,
+    )?;
     require!(is_irys_txid(&txid), SlabError::InvalidPointer);
     require!(hash.iter().any(|b| *b != 0), SlabError::InvalidPointer);
     require!(
@@ -1054,6 +1136,12 @@ fn insert_page(
     hash: [u8; 32],
     entries: &[PkSlot],
 ) -> Result<()> {
+    require_writer(
+        ctx.accounts.authority.key,
+        &ctx.accounts.slab,
+        &ctx.accounts.slab.key(),
+        ctx.remaining_accounts,
+    )?;
     require!(!entries.is_empty(), SlabError::ProgramLimitExceeded);
     require!(is_irys_txid(&txid), SlabError::InvalidPointer);
     require!(hash.iter().any(|b| *b != 0), SlabError::InvalidPointer);
@@ -1386,8 +1474,7 @@ pub struct ExecInsert<'info> {
     #[account(
         mut,
         seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
-        bump = slab.bump,
-        has_one = authority @ SlabError::Unauthorized
+        bump = slab.bump
     )]
     pub slab: Account<'info, SlabAccount>,
     #[account(
@@ -1628,8 +1715,7 @@ pub struct ExecIndexPut<'info> {
     pub authority: Signer<'info>,
     #[account(
         seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
-        bump = slab.bump,
-        has_one = authority @ SlabError::Unauthorized
+        bump = slab.bump
     )]
     pub slab: Account<'info, SlabAccount>,
     /// CHECK: catalog PDA. Size is INIT or GROWN.
@@ -1649,4 +1735,48 @@ pub struct ExecIndexPut<'info> {
         bump
     )]
     pub index: AccountLoader<'info, Index>,
+}
+
+#[derive(Accounts)]
+pub struct GrantWriter<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// CHECK: pubkey that may INSERT after this grant.
+    pub grantee: UncheckedAccount<'info>,
+    #[account(
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        has_one = authority @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + Grant::INIT_SPACE,
+        seeds = [GRANT_SEED, slab.key().as_ref(), grantee.key().as_ref()],
+        bump
+    )]
+    pub grant: Account<'info, Grant>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RevokeWriter<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// CHECK: pubkey to revoke.
+    pub grantee: UncheckedAccount<'info>,
+    #[account(
+        seeds = [SLAB_SEED, slab.authority.as_ref(), slab.ns.as_ref()],
+        bump = slab.bump,
+        has_one = authority @ SlabError::Unauthorized
+    )]
+    pub slab: Account<'info, SlabAccount>,
+    #[account(
+        mut,
+        close = authority,
+        seeds = [GRANT_SEED, slab.key().as_ref(), grantee.key().as_ref()],
+        bump = grant.bump
+    )]
+    pub grant: Account<'info, Grant>,
 }

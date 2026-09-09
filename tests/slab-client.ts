@@ -2,7 +2,7 @@ import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { expect } from "chai";
 import { Slab } from "../target/types/slab";
-import { MemoryPageStore, SlabDb, decodeCatalog, parseSql } from "../sdk/src";
+import { MemoryPageStore, SlabDb, decodeCatalog, parseSql, bindSql, isLegacyLocalPageId } from "../sdk/src";
 import { nsFrom } from "./helpers";
 
 if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
@@ -58,6 +58,35 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
       if (varchar.kind === "create") {
         expect(varchar.columns[1].typ).to.equal("text");
       }
+      const typed = parseSql(
+        "CREATE TABLE items (id uuid PRIMARY KEY, price float8 NOT NULL, meta json NOT NULL, blob bytea NOT NULL)"
+      );
+      expect(typed.kind).to.equal("create");
+      if (typed.kind === "create") {
+        expect(typed.columns.map((c) => c.typ)).to.deep.equal([
+          "uuid",
+          "float8",
+          "json",
+          "bytea",
+        ]);
+      }
+      const listed = parseSql(
+        "SELECT author, body FROM notes WHERE id = 1 ORDER BY author DESC LIMIT 2 OFFSET 0"
+      );
+      expect(listed.kind).to.equal("select");
+      if (listed.kind === "select") {
+        expect(listed.limit).to.equal(2);
+        expect(listed.orderBy[0]).to.deep.equal({ col: "author", dir: "desc" });
+      }
+      const bound = bindSql("INSERT INTO notes (id, author) VALUES ($1, $2)", [
+        1,
+        "o'hara",
+      ]);
+      expect(bound).to.equal(
+        "INSERT INTO notes (id, author) VALUES (1, 'o''hara')"
+      );
+      expect(isLegacyLocalPageId("zz".repeat(32))).to.equal(false);
+      expect(isLegacyLocalPageId("ab".repeat(32))).to.equal(true);
       expect(() => parseSql("SELECT * FROM a JOIN b ON a.id = b.id")).to.throw(
         /v0 SQL subset/
       );
@@ -158,6 +187,62 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
       const rows = await db.exec("SELECT * FROM tags WHERE author = 'ada'");
       expect(rows).to.have.length(1);
       expect(BigInt(rows[0].id as bigint | number)).to.equal(1n);
+    });
+
+    it("CREATE INDEX backfills old rows", async () => {
+      await db.exec(
+        "CREATE TABLE lateidx (id int8 PRIMARY KEY, author text NOT NULL)"
+      );
+      await db.exec("INSERT INTO lateidx (id, author) VALUES (1, 'ada')");
+      await db.exec("INSERT INTO lateidx (id, author) VALUES (2, 'cam')");
+      await db.exec("CREATE INDEX ON lateidx (author)");
+      const rows = await db.exec("SELECT * FROM lateidx WHERE author = 'ada'");
+      expect(rows).to.have.length(1);
+      expect(BigInt(rows[0].id as bigint | number)).to.equal(1n);
+    });
+
+    it("LIMIT ORDER BY and parameterized INSERT", async () => {
+      await db.exec(
+        "CREATE TABLE ranked (id int8 PRIMARY KEY, author text NOT NULL)"
+      );
+      await db.exec("INSERT INTO ranked (id, author) VALUES ($1, $2)", [
+        1,
+        "ada",
+      ]);
+      await db.exec("INSERT INTO ranked (id, author) VALUES ($1, $2)", [
+        2,
+        "o'hara",
+      ]);
+      const listed = await db.exec(
+        "SELECT * FROM ranked ORDER BY author LIMIT 1"
+      );
+      expect(listed).to.have.length(1);
+      expect(listed[0].author).to.equal("ada");
+      const quoted = await db.exec(
+        "SELECT * FROM ranked WHERE author = $1",
+        ["o'hara"]
+      );
+      expect(quoted).to.have.length(1);
+    });
+
+    it("uuid float8 json types", async () => {
+      await db.exec(
+        "CREATE TABLE payloads (id uuid PRIMARY KEY, price float8 NOT NULL, meta json NOT NULL)"
+      );
+      await db.exec(
+        "INSERT INTO payloads (id, price, meta) VALUES ($1, $2, $3)",
+        [
+          "550e8400-e29b-41d4-a716-446655440000",
+          12.5,
+          { ok: true, n: 3 },
+        ]
+      );
+      const rows = await db.exec(
+        "SELECT * FROM payloads WHERE id = '550e8400-e29b-41d4-a716-446655440000'"
+      );
+      expect(rows).to.have.length(1);
+      expect(rows[0].price).to.equal(12.5);
+      expect(rows[0].meta).to.deep.equal({ ok: true, n: 3 });
     });
 
     it("DROP TABLE does not reuse oids", async () => {

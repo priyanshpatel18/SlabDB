@@ -1,4 +1,4 @@
 {
   "bunVersion": "1.4.x",
-  "installCommand": "bun install --cwd .."
+  "installCommand": "bun install --cwd .. && bun run --cwd ../sdk build"
 }

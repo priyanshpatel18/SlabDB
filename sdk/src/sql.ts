@@ -16,7 +16,8 @@ import {
   type UpdateStatement,
   type ValuesStatement,
 } from "pgsql-ast-parser";
-import type { ColTypeName, SqlValue } from "./types";
+import { bindSql } from "./params";
+import type { ColTypeName, SqlParam, SqlValue } from "./types";
 
 export type ParsedCreate = {
   kind: "create";
@@ -38,6 +39,9 @@ export type ParsedSelect = {
   table: string;
   columns: string[] | "*";
   where: { col: string; value: SqlValue } | null;
+  limit: number | null;
+  offset: number;
+  orderBy: { col: string; dir: "asc" | "desc" }[];
 };
 
 export type ParsedUpdate = {
@@ -93,12 +97,25 @@ const TYPE_ALIASES: Record<string, ColTypeName> = {
   "character varying": "text",
   bpchar: "text",
   name: "text",
-  uuid: "text",
+  uuid: "uuid",
   timestamptz: "timestamptz",
   timestamp: "timestamptz",
   "timestamp with time zone": "timestamptz",
   "timestamp without time zone": "timestamptz",
   date: "timestamptz",
+  float: "float8",
+  float4: "float8",
+  float8: "float8",
+  double: "float8",
+  "double precision": "float8",
+  real: "float8",
+  numeric: "float8",
+  decimal: "float8",
+  json: "json",
+  jsonb: "json",
+  bytea: "bytea",
+  blob: "bytea",
+  bytes: "bytea",
 };
 
 const NOW_KEYWORDS = new Set([
@@ -169,7 +186,10 @@ function exprValue(expr: Expr): SqlValue {
       if (Number.isInteger(expr.value)) {
         return intValue(expr.value);
       }
-      throw new Error(`cannot parse SQL value ${expr.value}`);
+      if (!Number.isFinite(expr.value)) {
+        throw new Error(`cannot parse SQL value ${expr.value}`);
+      }
+      return expr.value;
     case "unary":
       if (expr.op === "+" || expr.op === "-") {
         const inner = exprValue(expr.operand);
@@ -327,16 +347,21 @@ function mapInsert(stmt: InsertStatement): ParsedInsert {
   };
 }
 
+function intLit(expr: Expr | undefined | null, label: string): number {
+  if (!expr) {
+    subset(label);
+  }
+  if (expr.type === "integer") {
+    return Number(expr.value);
+  }
+  if (expr.type === "numeric" && Number.isInteger(expr.value)) {
+    return Number(expr.value);
+  }
+  subset(`${label} must be an integer`);
+}
+
 function mapSelect(stmt: SelectFromStatement): ParsedSelect {
-  if (
-    stmt.groupBy?.length ||
-    stmt.having ||
-    stmt.distinct ||
-    stmt.limit ||
-    stmt.orderBy?.length ||
-    stmt.for ||
-    stmt.skip
-  ) {
+  if (stmt.groupBy?.length || stmt.having || stmt.distinct || stmt.for || stmt.skip) {
     subset("SELECT clause");
   }
   const table = singleTable(stmt.from);
@@ -352,7 +377,37 @@ function mapSelect(stmt: SelectFromStatement): ParsedSelect {
       return ident(c.expr.name);
     });
   }
-  return { kind: "select", table, columns, where: eqFilter(stmt.where ?? null) };
+  let limit: number | null = null;
+  let offset = 0;
+  if (stmt.limit) {
+    const lim = stmt.limit;
+    if ("limit" in lim || "offset" in lim) {
+      if (lim.limit) {
+        limit = intLit(lim.limit as Expr, "LIMIT");
+      }
+      if (lim.offset) {
+        offset = intLit(lim.offset as Expr, "OFFSET");
+      }
+    }
+  }
+  const orderBy: { col: string; dir: "asc" | "desc" }[] = [];
+  for (const ob of stmt.orderBy ?? []) {
+    const by = ob.by;
+    if (by.type !== "ref" || by.name === "*") {
+      subset("ORDER BY expression");
+    }
+    const dir = (ob.order ?? "ASC").toLowerCase() === "desc" ? "desc" : "asc";
+    orderBy.push({ col: ident(by.name), dir });
+  }
+  return {
+    kind: "select",
+    table,
+    columns,
+    where: eqFilter(stmt.where ?? null),
+    limit,
+    offset,
+    orderBy,
+  };
 }
 
 function mapUpdate(stmt: UpdateStatement): ParsedUpdate {
@@ -434,8 +489,9 @@ function mapStatement(stmt: Statement): ParsedSql {
   }
 }
 
-export function parseSql(sql: string): ParsedSql {
-  const text = sql.trim();
+export function parseSql(sql: string, params?: SqlParam[]): ParsedSql {
+  const bound = params && params.length > 0 ? bindSql(sql, params) : sql;
+  const text = bound.trim();
   if (!text) {
     subset();
   }

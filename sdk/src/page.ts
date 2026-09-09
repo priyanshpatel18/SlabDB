@@ -1,11 +1,13 @@
 // @ts-nocheck
 import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
 import {
+  readF64LE,
   readI32LE,
   readI64LE,
   readU16LE,
   readU32LE,
   readU8,
+  writeF64LE,
   writeI32LE,
   writeI64LE,
   writeU16LE,
@@ -14,10 +16,14 @@ import {
 } from "./bytes";
 import {
   COL_BOOL,
+  COL_BYTEA,
+  COL_FLOAT8,
   COL_INT4,
   COL_INT8,
+  COL_JSON,
   COL_TEXT,
   COL_TIMESTAMPTZ,
+  COL_UUID,
   PAGE_BYTES,
   PAGE_HEADER,
   TEXT_MAX_BYTES,
@@ -49,6 +55,14 @@ export function colTypeFromU8(typ: number): ColTypeName {
       return "text";
     case COL_TIMESTAMPTZ:
       return "timestamptz";
+    case COL_UUID:
+      return "uuid";
+    case COL_FLOAT8:
+      return "float8";
+    case COL_JSON:
+      return "json";
+    case COL_BYTEA:
+      return "bytea";
     default:
       throw new Error(`unknown column type ${typ}`);
   }
@@ -60,8 +74,12 @@ export function colTypeToAnchor(typ: ColTypeName): Record<string, Record<string,
 
 /** Store timestamptz as Unix milliseconds in int64. Accept ISO-8601 or epoch seconds/ms. */
 export function timestamptzMillis(value: SqlValue): bigint {
-  if (typeof value === "boolean") {
-    throw new Error("cannot convert boolean to timestamptz");
+  if (
+    typeof value === "boolean" ||
+    value instanceof Uint8Array ||
+    (typeof value === "object" && value !== null)
+  ) {
+    throw new Error("cannot convert value to timestamptz");
   }
   if (typeof value === "bigint" || typeof value === "number") {
     if (typeof value === "number" && !Number.isFinite(value)) {
@@ -95,6 +113,56 @@ function timestamptzIso(ms: bigint): string {
   return new Date(Number(ms)).toISOString();
 }
 
+function parseUuid(value: SqlValue): Buffer {
+  if (value instanceof Uint8Array) {
+    if (value.length !== 16) {
+      throw new Error("uuid must be 16 bytes");
+    }
+    return Buffer.from(value);
+  }
+  const hex = String(value).trim().toLowerCase().replace(/-/g, "");
+  if (!/^[0-9a-f]{32}$/.test(hex)) {
+    throw new Error(`cannot parse uuid ${JSON.stringify(value)}`);
+  }
+  return Buffer.from(hex, "hex");
+}
+
+function formatUuid(buf: Buffer): string {
+  const h = buf.toString("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+function encodeVarlen(body: Buffer, label: string): Buffer {
+  if (body.length > TEXT_MAX_BYTES) {
+    throw new Error(`${label} longer than ${TEXT_MAX_BYTES} bytes`);
+  }
+  const buf = Buffer.alloc(2 + body.length);
+  writeU16LE(buf, body.length, 0);
+  body.copy(buf, 2);
+  return buf;
+}
+
+function encodeJson(value: SqlValue): Buffer {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  try {
+    JSON.parse(text);
+  } catch {
+    throw new Error("json value is not valid JSON");
+  }
+  return encodeVarlen(Buffer.from(text, "utf8"), "json");
+}
+
+function encodeBytea(value: SqlValue): Buffer {
+  if (value instanceof Uint8Array) {
+    return encodeVarlen(Buffer.from(value), "bytea");
+  }
+  const raw = String(value);
+  if (/^\\x[0-9a-f]*$/i.test(raw)) {
+    return encodeVarlen(Buffer.from(raw.slice(2), "hex"), "bytea");
+  }
+  return encodeVarlen(Buffer.from(raw, "utf8"), "bytea");
+}
+
 export function encodePk(value: SqlValue, typ: ColTypeName): { key: number[]; keyLen: number } {
   const raw = encodeValue(value, typ);
   const key = Buffer.alloc(32);
@@ -121,24 +189,30 @@ export function encodeValue(value: SqlValue, typ: ColTypeName): Buffer {
       return buf;
     }
     case "text": {
-      const text = String(value);
-      if (text.length > TEXT_MAX_BYTES) {
-        throw new Error(`text longer than ${TEXT_MAX_BYTES} bytes`);
-      }
-      const body = Buffer.from(text, "utf8");
-      if (body.length > TEXT_MAX_BYTES) {
-        throw new Error(`text longer than ${TEXT_MAX_BYTES} bytes`);
-      }
-      const buf = Buffer.alloc(2 + body.length);
-      writeU16LE(buf, body.length, 0);
-      body.copy(buf, 2);
-      return buf;
+      return encodeVarlen(Buffer.from(String(value), "utf8"), "text");
     }
     case "timestamptz": {
       const buf = Buffer.alloc(8);
       writeI64LE(buf, timestamptzMillis(value), 0);
       return buf;
     }
+    case "uuid":
+      return parseUuid(value);
+    case "float8": {
+      const buf = Buffer.alloc(8);
+      const n = typeof value === "number" ? value : Number(value);
+      if (!Number.isFinite(n)) {
+        throw new Error("float8 is not a finite number");
+      }
+      writeF64LE(buf, n, 0);
+      return buf;
+    }
+    case "json":
+      return encodeJson(value);
+    case "bytea":
+      return encodeBytea(value);
+    default:
+      throw new Error(`unknown column type ${typ}`);
   }
 }
 
@@ -161,6 +235,29 @@ export function decodeValue(buf: Buffer, off: number, typ: ColTypeName): { value
         value: timestamptzIso(readI64LE(buf, off)),
         next: off + 8,
       };
+    case "uuid":
+      return {
+        value: formatUuid(buf.slice(off, off + 16)),
+        next: off + 16,
+      };
+    case "float8":
+      return { value: readF64LE(buf, off), next: off + 8 };
+    case "json": {
+      const len = readU16LE(buf, off);
+      const start = off + 2;
+      const text = buf.slice(start, start + len).toString("utf8");
+      return { value: JSON.parse(text), next: start + len };
+    }
+    case "bytea": {
+      const len = readU16LE(buf, off);
+      const start = off + 2;
+      return {
+        value: new Uint8Array(buf.slice(start, start + len)),
+        next: start + len,
+      };
+    }
+    default:
+      throw new Error(`unknown column type ${typ}`);
   }
 }
 

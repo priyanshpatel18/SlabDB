@@ -36,4 +36,6 @@ pub enum SlabError {
     CatalogGrown,
     #[msg("column is not indexed")]
     NotIndexed,
+    #[msg("writer is not the catalog owner and has no GRANT")]
+    NotGranted,
 }

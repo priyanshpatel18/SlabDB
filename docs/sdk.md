@@ -12,40 +12,47 @@ Pin `@solana/web3.js` to `1.98.4`. Keep `@anchor-lang/core` at `1.0.2`.
 
 ## Quick start
 
+Browser:
+
 ```ts
-import { AnchorProvider, Program } from "@anchor-lang/core";
-import { MemoryPageStore, SlabDb, SLAB_PROGRAM_ID } from "slabdb";
-import idl from "slabdb/idl/slab.json";
+import { Slab } from "slabdb/web";
 
-const db = new SlabDb({
-  program: new Program(idl, provider),
-  wallet: provider.wallet.publicKey,
-  ns: new Array(32).fill(0),
-  store: new MemoryPageStore(),
-});
-
+const db = await Slab.connect({ wallet, ns: "default" });
 await db.exec(
   "CREATE TABLE notes (id int8 PRIMARY KEY, author text NOT NULL, body text NOT NULL)",
 );
-await db.exec(
-  "INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'first note')",
-);
-const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
+await db.exec("INSERT INTO notes (id, author, body) VALUES ($1, $2, $3)", [
+  1,
+  "ada",
+  "first note",
+]);
+const rows = await db.exec("SELECT * FROM notes ORDER BY id LIMIT 10");
 ```
 
-After `CREATE TABLE` on base, delegate. Pass `programEr` for `INSERT`, `UPDATE`, and `SELECT` on the public ER.
-
-## Node Irys store
-
-Durable pages on Irys need the Node entry. It uses `fs` for the Solana keypair.
+Node:
 
 ```ts
-import { IrysPageStore } from "slabdb/node";
+import { Slab } from "slabdb/node";
 
-const store = new IrysPageStore();
+const db = await Slab.connect({ wallet, ns: "default" });
 ```
 
-Browser apps should keep 8 KiB pages in the tab until they upload.
+`connect` builds both programs, picks RPCs, initializes, waits for delegate after the first table, and routes `CREATE` vs `INSERT`.
+
+## Shared catalog
+
+```ts
+await owner.grant(playerPubkey);
+const player = await Slab.connect({
+  wallet: playerWallet,
+  ns: "game",
+  owner: authority.publicKey,
+});
+```
+
+## Recovery
+
+SHA-256 page pointers from the old in-tab store cannot be fetched. Catch `UnreadablePageError` or call `db.resetTable("users")`, then `INSERT` again.
 
 ## Source
 

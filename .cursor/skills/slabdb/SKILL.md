@@ -33,32 +33,44 @@ Do not put Helius keys in the client.
 Do not bump Anchor or Agave.
 Do not start a private ER.
 
+## Connect
+
+```ts
+import { Slab } from "slabdb/web"; // browser
+// import { Slab } from "slabdb/node"; // Node
+
+const db = await Slab.connect({ wallet, ns: "default" });
+await db.exec("INSERT INTO notes (id, author) VALUES ($1, $2)", [1, "ada"]);
+```
+
+`connect` initializes, waits for delegate after the first `CREATE TABLE`, and routes `CREATE` to base vs `INSERT` on the public ER.
+
+Shared catalog: `connect({ wallet, ns, owner })` then the owner calls `db.grant(player)`. Isolation is `[slab, owner, ns]`.
+
+Do not import `slabdb/node` in the browser. Do not import `slabdb/web` in Node unless you have `@irys/web-upload`.
+
 ## Routing
 
 - CREATE TABLE, initialize, prepare, delegate: base
-- INSERT, UPDATE, DELETE, SELECT after delegate: public ER with `programEr`
+- INSERT, UPDATE, DELETE, SELECT after delegate: public ER
 - ER send: fresh ER blockhash, `signTransaction`, `sendRawTransaction` with `skipPreflight`, poll processed
 - Do not confirm ER txs on L1 `lastValidBlockHeight`
 
 ## SQL
 
-v0 only. PRIMARY KEY required. No JOIN. Types: bool, int4, int8, text (max 1 KiB), timestamptz.
+v0 only. PRIMARY KEY required. No JOIN.
 
-The program never sees SQL text. Parse with `parseSql`, pack pages, then call the program.
+Types: bool, int4, int8, text (max 4 KiB), timestamptz, uuid, float8, json, bytea.
 
-## SDK
+`SELECT` supports `WHERE col =`, `ORDER BY`, `LIMIT`, `OFFSET`. `CREATE INDEX` backfills old rows.
 
-```ts
-import { MemoryPageStore, SlabDb } from "slabdb";
-import idl from "slabdb/idl/slab.json";
-```
+Parameterized SQL: `db.exec(sql, [p1, p2])`.
 
-Node Irys: `import { IrysPageStore } from "slabdb/node"`.
-Do not import `slabdb/node` in the browser.
+The program never sees SQL text.
 
-Browser pages stay in the tab until upload.
+## Recovery
 
-Isolation is `[slab, wallet, ns]`.
+Old SHA-256 page pointers cannot be fetched. Catch `UnreadablePageError` or call `db.resetTable(name)`, then INSERT again.
 
 ## Docs
 

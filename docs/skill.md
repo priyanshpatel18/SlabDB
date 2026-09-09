@@ -46,7 +46,7 @@ Examples:
 
 ```text
 Add INSERT for a notes table on the public ER
-Wire SlabDb with programEr after delegate
+Use Slab.connect from slabdb/web
 Do not confirm this ER tx on L1 lastValidBlockHeight
 ```
 
@@ -57,5 +57,7 @@ Do not confirm this ER tx on L1 lastValidBlockHeight
 - Pin `@solana/web3.js` to `1.98.4` and Anchor to `1.0.2`
 - Do not use `https://devnet.magicblock.app/` as validator RPC
 - Do not put Helius keys in the client
-- Browser pages stay in the tab until Irys upload
-- Node Irys store is `slabdb/node` only
+- `Slab.connect({ wallet, ns })` from `slabdb/web` or `slabdb/node`
+- Parameterized SQL, LIMIT / ORDER BY, uuid / float8 / json / bytea
+- Shared catalog via `owner` + `GRANT`
+- SHA-256 page recovery with `UnreadablePageError` / `resetTable`

@@ -2872,6 +2872,11 @@ export type Slab = {
       "code": 6015,
       "name": "notIndexed",
       "msg": "column is not indexed"
+    },
+    {
+      "code": 6016,
+      "name": "notGranted",
+      "msg": "writer is not the catalog owner and has no GRANT"
     }
   ],
   "types": [
@@ -2967,6 +2972,18 @@ export type Slab = {
           },
           {
             "name": "timestamptz"
+          },
+          {
+            "name": "uuid"
+          },
+          {
+            "name": "float8"
+          },
+          {
+            "name": "json"
+          },
+          {
+            "name": "bytea"
           }
         ]
       }

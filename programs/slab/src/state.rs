@@ -122,6 +122,15 @@ pub fn catalog_rels_mut(data: &mut [u8]) -> Result<&mut [Rel]> {
     Ok(rels)
 }
 
+/// Write grant. PDA `[grant, slab, grantee]`. Owner is always a writer.
+#[account]
+#[derive(InitSpace)]
+pub struct Grant {
+    pub slab: Pubkey,
+    pub grantee: Pubkey,
+    pub bump: u8,
+}
+
 /// Pointer to an 8 KiB page on Irys. Row bytes never live here.
 #[account]
 #[derive(InitSpace)]

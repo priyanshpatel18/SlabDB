@@ -1,6 +1,6 @@
 {
   "name": "slabdb",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "ISC",
   "description": "TypeScript SDK for Slab: SQL catalog on MagicBlock Ephemeral Rollups with 8 KiB pages on Irys.",
   "type": "module",
@@ -18,6 +18,11 @@
       "import": "./dist/node.js",
       "default": "./dist/node.js"
     },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "import": "./dist/web.js",
+      "default": "./dist/web.js"
+    },
     "./idl/slab.json": "./idl/slab.json"
   },
   "files": [
@@ -26,8 +31,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rm -rf dist && bun build src/index.ts --outfile dist/index.js --packages external --format esm --target node && bun build src/node.ts --outfile dist/node.js --packages external --format esm --target node && tsc",
-    "typecheck": "tsc --noEmit",
+    "build": "cp idl/slab.json src/idl.json && rm -rf dist && bun build src/index.ts --outfile dist/index.js --packages external --format esm --target node && bun build src/node.ts --outfile dist/node.js --packages external --format esm --target node && bun build src/web.ts --outfile dist/web.js --packages external --format esm --target browser && tsc && cp src/idl.json dist/idl.json",
+    "typecheck": "cp idl/slab.json src/idl.json && tsc --noEmit",
     "prepublishOnly": "bun run build"
   },
   "publishConfig": {
@@ -52,6 +57,18 @@
   "engines": {
     "node": ">=18"
   },
+  "peerDependencies": {
+    "@irys/web-upload": "^0.0.15",
+    "@irys/web-upload-solana": "^0.1.8"
+  },
+  "peerDependenciesMeta": {
+    "@irys/web-upload": {
+      "optional": true
+    },
+    "@irys/web-upload-solana": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "@anchor-lang/core": "1.0.2",
     "@irys/upload": "^0.0.15",
@@ -62,6 +79,8 @@
     "pgsql-ast-parser": "12.0.2"
   },
   "devDependencies": {
+    "@irys/web-upload": "^0.0.15",
+    "@irys/web-upload-solana": "^0.1.8",
     "@types/node": "^22",
     "typescript": "^5.7.3"
   }

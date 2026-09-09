@@ -16,46 +16,70 @@ The website console depends on the published npm package. After you change `sdk/
 
 ## Quick start
 
+Browser (Next.js):
+
 ```ts
-import { AnchorProvider, Program } from "@anchor-lang/core";
-import { MemoryPageStore, SlabDb, SLAB_PROGRAM_ID } from "slabdb";
-import idl from "slabdb/idl/slab.json";
+import { Slab } from "slabdb/web";
 
-const db = new SlabDb({
-  program: new Program(idl, provider),
-  wallet: provider.wallet.publicKey,
-  ns: new Array(32).fill(0),
-  store: new MemoryPageStore(),
-});
-
+const db = await Slab.connect({ wallet, ns: "default" });
 await db.exec(
   "CREATE TABLE notes (id int8 PRIMARY KEY, author text NOT NULL, body text NOT NULL)",
 );
-await db.exec(
-  "INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'first note')",
-);
-const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
+await db.exec("INSERT INTO notes (id, author, body) VALUES ($1, $2, $3)", [
+  1,
+  "ada",
+  "first note",
+]);
+const rows = await db.exec("SELECT * FROM notes ORDER BY id LIMIT 10");
 ```
 
-After `CREATE TABLE` on base, delegate. Then `INSERT`, `UPDATE`, and `SELECT` go to the public ER. Pass `programEr` for the rollup program.
+`connect` initializes the catalog, waits for delegate after the first `CREATE TABLE`, and routes `CREATE` to base and `INSERT` to the public ER.
 
-## Node Irys store
-
-Durable pages on Irys need the Node entry (uses `fs` for the Solana keypair):
+Node:
 
 ```ts
-import { IrysPageStore } from "slabdb/node";
+import { Slab } from "slabdb/node";
 
-const store = new IrysPageStore();
+const db = await Slab.connect({ wallet, ns: "default" });
 ```
 
-Browser apps should keep 8 KiB pages in session storage (see `app/lib/irys-store.ts`) until they upload.
+Low-level `SlabDb` is still exported from `slabdb` if you already have two `Program` instances.
+
+## Shared catalog
+
+Isolation is `[slab, owner, ns]`. Pass `owner` so many users share one schema. The owner calls `db.grant(player)` so that player can `INSERT`.
+
+```ts
+const app = await Slab.connect({ wallet: authority, ns: "game" });
+await app.grant(playerPubkey);
+
+const player = await Slab.connect({
+  wallet: playerWallet,
+  ns: "game",
+  owner: authority.publicKey,
+});
+await player.exec("INSERT INTO scores (id, pts) VALUES ($1, $2)", [id, 10]);
+```
+
+`CREATE TABLE`, `DROP TABLE`, `GRANT`, and delegate stay with the owner.
 
 ## v0 SQL
 
 `CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`.
 
-Types: bool, int4, int8, text (max 1 KiB), timestamptz. A PRIMARY KEY is required. No JOIN.
+Types: bool, int4, int8, text (max 4 KiB), timestamptz, uuid, float8, json, bytea.
+
+`SELECT` supports `WHERE col =`, `ORDER BY`, `LIMIT`, and `OFFSET`. `CREATE INDEX` backfills existing rows.
+
+Parameterized SQL: `db.exec("INSERT ... VALUES ($1, $2)", [id, name])`.
+
+A PRIMARY KEY is required. No JOIN.
+
+## Pages and recovery
+
+INSERT uploads the page to Irys and writes the receipt on-chain. The SDK returns after the ER transaction. Gateway confirm runs in the background.
+
+Old SHA-256 page pointers cannot be fetched. The SDK throws `UnreadablePageError` with `dropSql` and `createSql`. Call `db.resetTable(name)` to `DROP` and `CREATE` the same schema, then `INSERT` again.
 
 ## Defaults
 

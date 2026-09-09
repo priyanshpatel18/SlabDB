@@ -25,9 +25,10 @@ import {
   withLiveFlag,
 } from "./page";
 import { writeU32LE } from "./bytes";
+import { createTableSql, dropTableSql, isLegacyLocalPageId, UnreadablePageError } from "./recovery";
 import { parseSql } from "./sql";
 import type { PageStore } from "./store";
-import type { Column, Row, SqlValue } from "./types";
+import type { Column, Row, SqlParam, SqlValue } from "./types";
 
 export type Remaining = {
   pubkey: PublicKey;
@@ -39,9 +40,12 @@ export type SlabDbOpts = {
   program: Program<Slab>;
   programEr?: Program<Slab>;
   wallet: PublicKey;
+  /** Catalog owner used in PDA seeds. Default is `wallet`. */
+  owner?: PublicKey;
   ns: number[];
   store: PageStore;
   remainingAccounts?: Remaining[];
+  autoDelegate?: boolean;
 };
 
 function u32le(n: number): Buffer {
@@ -71,6 +75,17 @@ async function waitOwner(
 }
 
 function valuesEqual(a: SqlValue, b: SqlValue): boolean {
+  if (a instanceof Uint8Array || b instanceof Uint8Array) {
+    const aa = a instanceof Uint8Array ? a : null;
+    const bb = b instanceof Uint8Array ? b : null;
+    if (!aa || !bb || aa.length !== bb.length) {
+      return false;
+    }
+    return Buffer.from(aa).equals(Buffer.from(bb));
+  }
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object") {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
   try {
     return timestamptzMillis(a) === timestamptzMillis(b);
   } catch {
@@ -81,13 +96,40 @@ function valuesEqual(a: SqlValue, b: SqlValue): boolean {
   }
 }
 
+function compareSql(a: SqlValue, b: SqlValue): number {
+  if (a instanceof Uint8Array || b instanceof Uint8Array) {
+    const aa = Buffer.from(a instanceof Uint8Array ? a : []);
+    const bb = Buffer.from(b instanceof Uint8Array ? b : []);
+    return Buffer.compare(aa, bb);
+  }
+  if (typeof a === "number" && typeof b === "number") {
+    return a === b ? 0 : a < b ? -1 : 1;
+  }
+  if (typeof a === "bigint" || typeof b === "bigint") {
+    const aa = BigInt(a as bigint | number);
+    const bb = BigInt(b as bigint | number);
+    return aa === bb ? 0 : aa < bb ? -1 : 1;
+  }
+  try {
+    const aa = timestamptzMillis(a);
+    const bb = timestamptzMillis(b);
+    return aa === bb ? 0 : aa < bb ? -1 : 1;
+  } catch {
+    const aa = String(typeof a === "object" ? JSON.stringify(a) : a);
+    const bb = String(typeof b === "object" ? JSON.stringify(b) : b);
+    return aa < bb ? -1 : aa > bb ? 1 : 0;
+  }
+}
+
 export class SlabDb {
   readonly program: Program<Slab>;
   readonly programEr?: Program<Slab>;
   readonly wallet: PublicKey;
+  readonly owner: PublicKey;
   readonly ns: number[];
   readonly store: PageStore;
   readonly remainingAccounts: Remaining[];
+  readonly autoDelegate: boolean;
   readonly slabPda: PublicKey;
   readonly catalogPda: PublicKey;
   readonly feeVaultPda: PublicKey;
@@ -98,11 +140,13 @@ export class SlabDb {
     this.program = opts.program;
     this.programEr = opts.programEr;
     this.wallet = opts.wallet;
+    this.owner = opts.owner ?? opts.wallet;
     this.ns = opts.ns;
     this.store = opts.store;
     this.remainingAccounts = opts.remainingAccounts ?? [];
+    this.autoDelegate = opts.autoDelegate === true;
     [this.slabPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("slab"), this.wallet.toBuffer(), Buffer.from(this.ns)],
+      [Buffer.from("slab"), this.owner.toBuffer(), Buffer.from(this.ns)],
       this.program.programId
     );
     [this.catalogPda] = PublicKey.findProgramAddressSync(
@@ -110,9 +154,28 @@ export class SlabDb {
       this.program.programId
     );
     [this.feeVaultPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("fee"), this.wallet.toBuffer(), Buffer.from(this.ns)],
+      [Buffer.from("fee"), this.owner.toBuffer(), Buffer.from(this.ns)],
       this.program.programId
     );
+  }
+
+  grantPda(grantee: PublicKey): PublicKey {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("grant"), this.slabPda.toBuffer(), grantee.toBuffer()],
+      this.program.programId
+    )[0];
+  }
+
+  private writerRemaining(): Remaining[] {
+    const extra = [...this.remainingAccounts];
+    if (!this.wallet.equals(this.owner)) {
+      extra.push({
+        pubkey: this.grantPda(this.wallet),
+        isSigner: false,
+        isWritable: false,
+      });
+    }
+    return extra;
   }
 
   indexPda(relOid: number, pkAttr: number): PublicKey {
@@ -173,10 +236,51 @@ export class SlabDb {
     this.catalogSnap = null;
   }
 
-  async exec(sql: string): Promise<Row[]> {
-    const ast = parseSql(sql);
+  private async maybeAutoDelegate(table: string): Promise<void> {
+    if (!this.autoDelegate || (await this.isDelegated())) {
+      return;
+    }
+    const rel = await this.relByName(table);
+    await this.delegate(rel.oid, 0, rel.pkAttr);
+    const start = Date.now();
+    while (Date.now() - start < 4000) {
+      if (await this.isDelegated()) {
+        return;
+      }
+      await sleep(80);
+    }
+    throw new Error("Slab is not owned by the delegation program yet");
+  }
+
+  private async fetchPage(rel: RelInfo, id: string): Promise<Buffer> {
+    try {
+      return await this.store.get(id);
+    } catch (err) {
+      if (err instanceof UnreadablePageError) {
+        throw new UnreadablePageError({
+          pageId: err.pageId,
+          table: rel.name,
+          createSql: createTableSql(rel),
+          cause: err,
+        });
+      }
+      if (isLegacyLocalPageId(id)) {
+        throw new UnreadablePageError({
+          pageId: id,
+          table: rel.name,
+          createSql: createTableSql(rel),
+          cause: err,
+        });
+      }
+      throw err;
+    }
+  }
+
+  async exec(sql: string, params?: SqlParam[]): Promise<Row[]> {
+    const ast = parseSql(sql, params);
     if (ast.kind === "create") {
       await this.createTable(ast.name, ast.columns, ast.pkAttr);
+      await this.maybeAutoDelegate(ast.name);
       return [];
     }
     if (ast.kind === "createIndex") {
@@ -199,7 +303,11 @@ export class SlabDb {
       await this.dropTable(ast.name);
       return [];
     }
-    return this.select(ast.table, ast.columns, ast.where);
+    return this.select(ast.table, ast.columns, ast.where, {
+      limit: ast.limit,
+      offset: ast.offset,
+      orderBy: ast.orderBy,
+    });
   }
 
   async exists(): Promise<boolean> {
@@ -220,6 +328,11 @@ export class SlabDb {
     if (info) {
       return;
     }
+    if (!this.wallet.equals(this.owner)) {
+      throw new Error(
+        "catalog does not exist. The owner must initialize and CREATE TABLE first."
+      );
+    }
     await this.program.methods
       .initialize(this.ns)
       .accounts({
@@ -229,6 +342,44 @@ export class SlabDb {
         feeVault: this.feeVaultPda,
       })
       .rpc();
+  }
+
+  async grant(grantee: PublicKey): Promise<void> {
+    await this.program.methods
+      .grantWriter()
+      .accounts({
+        authority: this.wallet,
+        grantee,
+        slab: this.slabPda,
+        grant: this.grantPda(grantee),
+      })
+      .rpc();
+  }
+
+  async revoke(grantee: PublicKey): Promise<void> {
+    await this.program.methods
+      .revokeWriter()
+      .accounts({
+        authority: this.wallet,
+        grantee,
+        slab: this.slabPda,
+        grant: this.grantPda(grantee),
+      })
+      .rpc();
+  }
+
+  async resetTable(name: string): Promise<{ dropSql: string; createSql: string }> {
+    const rel = await this.relByName(name);
+    const createSql = createTableSql(rel);
+    const dropSql = dropTableSql(name);
+    await this.dropTable(name);
+    const ast = parseSql(createSql);
+    if (ast.kind !== "create") {
+      throw new Error("failed to rebuild CREATE TABLE");
+    }
+    await this.createTable(ast.name, ast.columns, ast.pkAttr);
+    await this.maybeAutoDelegate(ast.name);
+    return { dropSql, createSql };
   }
 
   private async loadCatalog(): Promise<ReturnType<typeof decodeCatalog>> {
@@ -288,6 +439,7 @@ export class SlabDb {
         feeVault: this.feeVaultPda,
         pagePtr,
       })
+      .remainingAccounts(this.writerRemaining())
       .rpc();
   }
 
@@ -414,7 +566,7 @@ export class SlabDb {
         this.pagePda(rel.oid, pageNo)
       );
       const id = decodeIrysTxid(ptr.txid);
-      pageBuf = await this.store.get(id);
+      pageBuf = await this.fetchPage(rel, id);
       const hash = sha256(pageBuf);
       if (Buffer.from(hash).compare(Buffer.from(ptr.hash)) !== 0) {
         throw new Error("page hash does not match PagePtr");
@@ -463,6 +615,7 @@ export class SlabDb {
           pagePtr: this.pagePda(rel.oid, commitNo),
           index: this.indexPda(rel.oid, rel.pkAttr),
         })
+        .remainingAccounts(this.writerRemaining())
         .rpc(await this.rpcOpts());
       for (const e of entries) {
         await this.putSecondary(rel, e.row, commitNo, e.slot);
@@ -525,6 +678,7 @@ export class SlabDb {
           catalog: this.catalogPda,
           index: this.indexPda(rel.oid, attr),
         })
+        .remainingAccounts(this.writerRemaining())
         .rpc(await this.rpcOpts());
     }
   }
@@ -544,6 +698,7 @@ export class SlabDb {
           catalog: this.catalogPda,
           index: this.indexPda(rel.oid, attr),
         })
+        .remainingAccounts(this.writerRemaining())
         .rpc(await this.rpcOpts());
     }
   }
@@ -577,6 +732,7 @@ export class SlabDb {
           catalog: this.catalogPda,
           index: this.indexPda(rel.oid, attr),
         })
+        .remainingAccounts(this.writerRemaining())
         .rpc(await this.rpcOpts());
       await writer.methods
         .execIndexPut(rel.oid, attr, pageNo, [
@@ -588,6 +744,7 @@ export class SlabDb {
           catalog: this.catalogPda,
           index: this.indexPda(rel.oid, attr),
         })
+        .remainingAccounts(this.writerRemaining())
         .rpc(await this.rpcOpts());
     }
   }
@@ -595,7 +752,12 @@ export class SlabDb {
   async select(
     table: string,
     columns: string[] | "*",
-    where: { col: string; value: SqlValue } | null
+    where: { col: string; value: SqlValue } | null,
+    opts: {
+      limit?: number | null;
+      offset?: number;
+      orderBy?: { col: string; dir: "asc" | "desc" }[];
+    } = {}
   ): Promise<Row[]> {
     const rel = await this.relByName(table);
     const reader = await this.reader();
@@ -632,7 +794,7 @@ export class SlabDb {
       const ptr = await reader.account.pagePtr.fetch(
         this.pagePda(rel.oid, hit.pageNo)
       );
-      const page = await this.store.get(decodeIrysTxid(ptr.txid));
+      const page = await this.fetchPage(rel, decodeIrysTxid(ptr.txid));
       if (Buffer.from(sha256(page)).compare(Buffer.from(ptr.hash)) !== 0) {
         throw new Error("page hash does not match PagePtr");
       }
@@ -643,7 +805,7 @@ export class SlabDb {
         const ptr = await reader.account.pagePtr.fetch(
           this.pagePda(rel.oid, pageNo)
         );
-        const page = await this.store.get(decodeIrysTxid(ptr.txid));
+        const page = await this.fetchPage(rel, decodeIrysTxid(ptr.txid));
         if (Buffer.from(sha256(page)).compare(Buffer.from(ptr.hash)) !== 0) {
           throw new Error("page hash does not match PagePtr");
         }
@@ -656,6 +818,21 @@ export class SlabDb {
       if (where) {
         rows = rows.filter((row) => valuesEqual(row[where.col], where.value));
       }
+    }
+
+    for (let i = opts.orderBy?.length ?? 0; i-- > 0; ) {
+      const ob = opts.orderBy![i];
+      rows.sort((a, b) => {
+        const cmp = compareSql(a[ob.col], b[ob.col]);
+        return ob.dir === "desc" ? -cmp : cmp;
+      });
+    }
+    const offset = opts.offset ?? 0;
+    if (offset > 0) {
+      rows = rows.slice(offset);
+    }
+    if (opts.limit != null) {
+      rows = rows.slice(0, opts.limit);
     }
 
     if (columns === "*") {
@@ -692,6 +869,48 @@ export class SlabDb {
       })
       .rpc(await this.rpcOpts());
     this.invalidateCatalog();
+    const indexed = await this.relByName(table);
+    const byPage = new Map<
+      number,
+      { key: number[]; keyLen: number; slot: number }[]
+    >();
+    for (let pageNo = 0; pageNo < indexed.nPages; pageNo++) {
+      const reader = await this.reader();
+      const ptr = await reader.account.pagePtr.fetch(
+        this.pagePda(indexed.oid, pageNo)
+      );
+      const page = await this.fetchPage(indexed, decodeIrysTxid(ptr.txid));
+      const physical = unpackPhysical(page, indexed.columns);
+      for (let slot = 0; slot < physical.length; slot++) {
+        if (physical[slot].dead) {
+          continue;
+        }
+        const key = encodePk(
+          physical[slot].row[indexed.columns[attr].name],
+          indexed.columns[attr].typ
+        );
+        const list = byPage.get(pageNo) ?? [];
+        list.push({ key: key.key, keyLen: key.keyLen, slot });
+        byPage.set(pageNo, list);
+      }
+    }
+    const writer2 = await this.reader();
+    for (const [pageNo, list] of byPage) {
+      const chunkSize = 16;
+      for (let i = 0; i < list.length; i += chunkSize) {
+        const chunk = list.slice(i, i + chunkSize);
+        await writer2.methods
+          .execIndexPut(indexed.oid, attr, pageNo, chunk)
+          .accounts({
+            authority: this.wallet,
+            slab: this.slabPda,
+            catalog: this.catalogPda,
+            index: this.indexPda(indexed.oid, attr),
+          })
+          .remainingAccounts(this.writerRemaining())
+          .rpc(await this.rpcOpts());
+      }
+    }
   }
 
   async update(
@@ -720,7 +939,7 @@ export class SlabDb {
     const ptr = await reader.account.pagePtr.fetch(
       this.pagePda(rel.oid, hit.pageNo)
     );
-    const oldPage = await this.store.get(decodeIrysTxid(ptr.txid));
+    const oldPage = await this.fetchPage(rel, decodeIrysTxid(ptr.txid));
     const tuple = encodeTuple(rel.columns, next);
     const rewritten = rewriteSlot(oldPage, rel.columns, hit.slot, tuple);
     const uploaded = await this.store.put(rewritten.page);
@@ -754,6 +973,7 @@ export class SlabDb {
         pagePtr: this.pagePda(rel.oid, hit.pageNo),
         index: this.indexPda(rel.oid, rel.pkAttr),
       })
+      .remainingAccounts(this.writerRemaining())
       .rpc(await this.rpcOpts());
     await this.syncSecondary(
       rel,
@@ -783,7 +1003,7 @@ export class SlabDb {
     const ptr = await reader.account.pagePtr.fetch(
       this.pagePda(rel.oid, hit.pageNo)
     );
-    const oldPage = await this.store.get(decodeIrysTxid(ptr.txid));
+    const oldPage = await this.fetchPage(rel, decodeIrysTxid(ptr.txid));
     const oldRow = unpackSlot(oldPage, rel.columns, hit.slot);
     const packed = tombstoneSlot(oldPage, rel.columns, hit.slot);
     const uploaded = await this.store.put(packed);
@@ -808,6 +1028,7 @@ export class SlabDb {
         pagePtr: this.pagePda(rel.oid, hit.pageNo),
         index: this.indexPda(rel.oid, rel.pkAttr),
       })
+      .remainingAccounts(this.writerRemaining())
       .rpc(await this.rpcOpts());
     if (oldRow) {
       await this.delSecondary(rel, oldRow);

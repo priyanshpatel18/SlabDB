@@ -41,3 +41,11 @@ export function readI32LE(buf: Uint8Array, offset: number): number {
 export function readI64LE(buf: Uint8Array, offset: number): bigint {
   return viewOf(buf).getBigInt64(offset, true);
 }
+
+export function writeF64LE(buf: Uint8Array, value: number, offset: number): void {
+  viewOf(buf).setFloat64(offset, value, true);
+}
+
+export function readF64LE(buf: Uint8Array, offset: number): number {
+  return viewOf(buf).getFloat64(offset, true);
+}

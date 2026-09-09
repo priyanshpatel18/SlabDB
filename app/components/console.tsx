@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { RelInfo } from "slabdb";
+import { UnreadablePageError } from "slabdb";
 import {
   delegateSession,
   execSql,
@@ -47,6 +48,12 @@ const EMPTY_RELS: RelInfo[] = [];
 function formatValue(value: SqlValue): string {
   if (typeof value === "bigint") return value.toString();
   if (typeof value === "boolean") return value ? "true" : "false";
+  if (value instanceof Uint8Array) {
+    return `\\x${Array.from(value, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+  }
+  if (value !== null && typeof value === "object") {
+    return JSON.stringify(value);
+  }
   return String(value);
 }
 
@@ -158,6 +165,7 @@ export function Console() {
         setError("Sign in first");
         return;
       }
+      setSql(source);
       setBusy(true);
       setRunStatus("Running");
       setError(null);
@@ -167,10 +175,18 @@ export function Console() {
           apply(source, next);
         })
         .catch((err) => {
-          setError(err instanceof Error ? err.message : "SQL failed");
+          const table = tableFromSql(source);
+          let msg = err instanceof Error ? err.message : "SQL failed";
+          if (err instanceof UnreadablePageError) {
+            msg = err.message;
+            setSql(err.dropSql ? `${err.dropSql};` : "DROP TABLE");
+          } else if (table && /not on Irys|another tab|Irys GET failed/i.test(msg)) {
+            msg = `Rows in ${table} are not on Irys. Run DROP TABLE ${table}; then CREATE TABLE and INSERT again.`;
+            setSql(`DROP TABLE ${table};`);
+          }
+          setError(msg);
           setResult({ rows: [], message: "" });
-          const t = tableFromSql(source);
-          if (t) setActive(t);
+          if (table) setActive(table);
         })
         .finally(() => {
           setBusy(false);

@@ -1,17 +1,12 @@
 "use client";
 
 import { Buffer } from "buffer";
-import { AnchorProvider, Program } from "@anchor-lang/core";
-import { Connection } from "@solana/web3.js";
-import { SlabDb, withTimeout, type RelInfo } from "slabdb";
+import { withTimeout, type RelInfo } from "slabdb";
+import { Slab, BrowserIrysPageStore, type StatusFn } from "slabdb/web";
 import { parseSql, splitStatements, type ParsedSql } from "@/lib/sql";
 import type { Row } from "@/lib/sql-types";
-import { BASE_RPC_URL, NS_LABEL, nsBytes } from "@/lib/cluster";
-import { resolveErTarget } from "@/lib/er-target";
-import { ErProvider } from "@/lib/er-provider";
-import { BrowserIrysPageStore, type StatusFn } from "@/lib/irys-store";
+import { NS_LABEL } from "@/lib/cluster";
 import type { SlabSigner } from "@/lib/wallet";
-import idl from "slabdb/idl/slab.json";
 
 if (typeof globalThis.Buffer === "undefined") {
   (globalThis as unknown as { Buffer: typeof Buffer }).Buffer = Buffer;
@@ -23,60 +18,29 @@ export type ExecResult = {
 };
 
 export type ChainSession = {
-  db: SlabDb;
+  db: import("slabdb").SlabDb;
   delegated: boolean;
   rels: RelInfo[];
   erUrl: string;
   slab: string;
 };
 
-function timedFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit
-): Promise<Response> {
-  return fetch(input, { ...init, signal: AbortSignal.timeout(12_000) });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitDelegated(db: SlabDb): Promise<void> {
-  for (let i = 0; i < 40; i++) {
-    if (await db.isDelegated()) {
-      return;
-    }
-    await sleep(80);
-  }
-  throw new Error("Slab is not owned by the delegation program yet");
-}
-
-function needsEr(ast: ParsedSql): boolean {
-  return (
-    ast.kind === "insert" ||
-    ast.kind === "update" ||
-    ast.kind === "delete" ||
-    ast.kind === "drop" ||
-    ast.kind === "createIndex"
-  );
-}
-
 function messageFor(ast: ParsedSql, rows: Row[]): string {
   if (ast.kind === "create") {
-    return `CREATE TABLE ${ast.name} on base`;
+    return `CREATE TABLE ${ast.name}`;
   }
   if (ast.kind === "createIndex") {
-    return `CREATE INDEX on ${ast.table}(${ast.column}) on ER`;
+    return `CREATE INDEX on ${ast.table}(${ast.column})`;
   }
   if (ast.kind === "insert") {
     const n = (ast.rows ?? [ast.values]).length;
-    return `INSERT ${n} on ER`;
+    return `INSERT ${n}`;
   }
   if (ast.kind === "update") {
-    return "UPDATE on ER";
+    return "UPDATE";
   }
   if (ast.kind === "delete") {
-    return "DELETE on ER";
+    return "DELETE";
   }
   if (ast.kind === "drop") {
     return `DROP TABLE ${ast.name}`;
@@ -84,7 +48,10 @@ function messageFor(ast: ParsedSql, rows: Row[]): string {
   return `${rows.length} row${rows.length === 1 ? "" : "s"}`;
 }
 
-async function snapshot(db: SlabDb, erUrl: string): Promise<ChainSession> {
+async function snapshot(
+  db: ChainSession["db"],
+  erUrl: string
+): Promise<ChainSession> {
   let rels: RelInfo[] = [];
   try {
     rels = (await db.catalog()).rels;
@@ -104,36 +71,11 @@ export async function openSession(wallet: SlabSigner): Promise<ChainSession> {
   if (!wallet.publicKey) {
     throw new Error("Sign in first");
   }
-  const target = await resolveErTarget();
-  const base = new Connection(BASE_RPC_URL, {
-    commitment: "confirmed",
-    confirmTransactionInitialTimeout: 12_000,
-    fetch: timedFetch,
+  const client = await Slab.connect({
+    wallet,
+    ns: NS_LABEL,
   });
-  const er = new Connection(target.erUrl, {
-    commitment: "processed",
-    confirmTransactionInitialTimeout: 12_000,
-    fetch: timedFetch,
-  });
-  const baseProvider = new AnchorProvider(base, wallet, {
-    commitment: "confirmed",
-  });
-  const erProvider = new ErProvider(er, wallet, {
-    commitment: "processed",
-    skipPreflight: true,
-  });
-  const program = new Program(idl as never, baseProvider) as never;
-  const programEr = new Program(idl as never, erProvider) as never;
-  const db = new SlabDb({
-    program,
-    programEr,
-    wallet: wallet.publicKey,
-    ns: nsBytes(NS_LABEL),
-    store: new BrowserIrysPageStore(wallet),
-    remainingAccounts: target.remainingAccounts,
-  });
-  await db.initialize();
-  return snapshot(db, target.erUrl);
+  return snapshot(client.db, client.erUrl);
 }
 
 export async function delegateSession(
@@ -148,8 +90,13 @@ export async function delegateSession(
     throw new Error("CREATE TABLE on base before delegate");
   }
   await session.db.delegate(rel.oid, 0, rel.pkAttr);
-  await waitDelegated(session.db);
-  return snapshot(session.db, session.erUrl);
+  for (let i = 0; i < 40; i++) {
+    if (await session.db.isDelegated()) {
+      return snapshot(session.db, session.erUrl);
+    }
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  throw new Error("Slab is not owned by the delegation program yet");
 }
 
 export async function execSql(
@@ -183,30 +130,14 @@ async function execSqlInner(
   let message = "ok";
   for (const stmt of stmts) {
     const ast = parseSql(stmt);
-    if (needsEr(ast) && !session.delegated) {
-      throw new Error(
-        "INSERT, UPDATE, DELETE, DROP, and CREATE INDEX run on the public ER. Delegate first."
-      );
-    }
     if (ast.kind === "insert") {
-      onStatus("INSERT on ER");
+      onStatus("INSERT");
     } else if (ast.kind === "select") {
       onStatus("SELECT");
     } else {
       onStatus(ast.kind);
     }
     rows = await session.db.exec(stmt);
-    if (ast.kind === "create" && !session.delegated) {
-      onStatus("Delegating to the public ER");
-      const catalog = await session.db.catalog();
-      const rel = catalog.rels.find((item: RelInfo) => item.name === ast.name);
-      if (!rel) {
-        throw new Error(`CREATE TABLE ${ast.name} did not land in the catalog`);
-      }
-      await session.db.delegate(rel.oid, 0, rel.pkAttr);
-      await waitDelegated(session.db);
-      session.delegated = true;
-    }
     message = messageFor(ast, rows);
   }
   onStatus("Refreshing catalog");

@@ -3,6 +3,7 @@ pub const CAT_SEED: &[u8] = b"cat";
 pub const PAGE_SEED: &[u8] = b"page";
 pub const IDX_SEED: &[u8] = b"idx";
 pub const FEE_SEED: &[u8] = b"fee";
+pub const GRANT_SEED: &[u8] = b"grant";
 
 pub const INIT_TABLES: usize = 16;
 pub const MAX_TABLES: usize = 32;
@@ -15,7 +16,8 @@ pub const TXID_LEN: usize = 64;
 pub const TXID_MIN_LEN: usize = 32;
 pub const REL_NAME_LEN: usize = 64;
 pub const ATTR_NAME_LEN: usize = 32;
-pub const TEXT_MAX_BYTES: usize = 1024;
+/// Max utf8 / bytea payload in one cell. The 8 KiB page is the hard cap.
+pub const TEXT_MAX_BYTES: usize = 4096;
 /// Extra lamports on the fee vault so `prepare_index` / `prepare_page` can pay rent on L1
 /// for several tables after Slab is already delegated.
 pub const FEE_RESERVE_LAMPORTS: u64 = 800_000_000;
@@ -27,3 +29,7 @@ pub const COL_INT4: u8 = 2;
 pub const COL_INT8: u8 = 3;
 pub const COL_TEXT: u8 = 4;
 pub const COL_TIMESTAMPTZ: u8 = 5;
+pub const COL_UUID: u8 = 6;
+pub const COL_FLOAT8: u8 = 7;
+pub const COL_JSON: u8 = 8;
+pub const COL_BYTEA: u8 = 9;

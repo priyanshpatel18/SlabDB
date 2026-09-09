@@ -24,7 +24,7 @@ Do not send ER transactions to `https://devnet.magicblock.app/`. Do not put Heli
 
 ## Isolation
 
-Catalog isolation is `[slab, wallet, ns]`. Each wallet has its own tables.
+Catalog isolation is `[slab, owner, ns]`. Each app can share one schema: the owner key initializes, then `GRANT` lets other wallets `INSERT`.
 
 ## Next
 
