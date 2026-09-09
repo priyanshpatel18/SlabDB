@@ -40,11 +40,7 @@ export function AgentGuideDialog() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (agentEnabled) {
-      setOpen(false);
-      return;
-    }
-    if (!ready || !connected || !agentAvailable || dismissed()) {
+    if (!ready || !connected || !agentAvailable || agentEnabled || dismissed()) {
       return;
     }
     const timer = window.setTimeout(() => setOpen(true), 400);
@@ -80,7 +76,7 @@ export function AgentGuideDialog() {
 
   return (
     <Dialog
-      open={open}
+      open={open && !agentEnabled}
       onOpenChange={(next) => {
         if (!next) closeForNow();
       }}
