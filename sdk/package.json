@@ -5,34 +5,41 @@
   "description": "TypeScript SDK for Slab: SQL catalog on MagicBlock Ephemeral Rollups with 8 KiB pages on Irys.",
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts",
-      "require": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./node": {
-      "types": "./src/node.ts",
-      "import": "./src/node.ts",
-      "require": "./src/node.ts",
-      "default": "./src/node.ts"
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
     },
     "./idl/slab.json": "./idl/slab.json"
   },
   "files": [
-    "src",
+    "dist",
     "idl",
     "README.md"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "build": "rm -rf dist && bun build src/index.ts --outfile dist/index.js --packages external --format esm --target node && bun build src/node.ts --outfile dist/node.js --packages external --format esm --target node && tsc",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://slab.priyanshpatel.com",
+  "bugs": {
+    "url": "https://github.com/priyanshpatel18/SlabDB/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/priyanshpatel18/SlabDB.git",
+    "url": "git+https://github.com/priyanshpatel18/SlabDB.git",
     "directory": "sdk"
   },
   "keywords": [
@@ -42,6 +49,9 @@
     "ephemeral-rollups",
     "irys"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@anchor-lang/core": "1.0.2",
     "@irys/upload": "^0.0.15",

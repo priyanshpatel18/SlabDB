@@ -9,8 +9,11 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "idl/**/*.json"]
+  "include": ["src/**/*.ts"]
 }

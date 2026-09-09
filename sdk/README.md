@@ -7,16 +7,12 @@ The website console in `app/` is one consumer of this package. Other apps can us
 ## Install
 
 ```bash
-bun add slabdb @solana/web3.js @anchor-lang/core
+bun add slabdb
 ```
 
-Until this package is on npm, use the repo path:
+Also install `@solana/web3.js` and `@anchor-lang/core` if your app does not already have them. Pin `@solana/web3.js` to `1.98.4`.
 
-```bash
-bun add github:priyanshpatel18/SlabDB#main:sdk
-```
-
-Or in this repo: `"slabdb": "file:../sdk"`.
+The website console depends on the published npm package. After you change `sdk/`, publish a new version and bump `slabdb` in `app/package.json`.
 
 ## Quick start
 
