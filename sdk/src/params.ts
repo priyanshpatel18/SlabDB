@@ -32,9 +32,6 @@ function formatParam(value: SqlParam): string {
 
 /** Replace `$1`, `$2`, … with SQL literals. Skip quoted strings and comments. */
 export function bindSql(sql: string, params: SqlParam[] = []): string {
-  if (params.length === 0) {
-    return sql;
-  }
   let out = "";
   let i = 0;
   let inStr = false;

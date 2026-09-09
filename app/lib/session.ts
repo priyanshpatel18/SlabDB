@@ -1,7 +1,7 @@
 "use client";
 
 import { Buffer } from "buffer";
-import { withTimeout, type RelInfo } from "slabdb";
+import { withTimeout, type RelInfo, type SqlParam } from "slabdb";
 import { Slab, BrowserIrysPageStore, type StatusFn } from "slabdb/web";
 import { parseSql, splitStatements, type ParsedSql } from "@/lib/sql";
 import type { Row } from "@/lib/sql-types";
@@ -102,14 +102,19 @@ export async function delegateSession(
 export async function execSql(
   session: ChainSession,
   sql: string,
-  onStatus: StatusFn = () => {}
+  onStatus: StatusFn = () => {},
+  params?: SqlParam[]
 ): Promise<{ result: ExecResult; session: ChainSession }> {
   const store = session.db.store as BrowserIrysPageStore;
   if (typeof store.onStatus === "function" || "onStatus" in store) {
     store.onStatus = onStatus;
   }
   try {
-    return await withTimeout(execSqlInner(session, sql, onStatus), 90_000, "SQL");
+    return await withTimeout(
+      execSqlInner(session, sql, onStatus, params),
+      90_000,
+      "SQL"
+    );
   } finally {
     if ("onStatus" in store) {
       store.onStatus = () => {};
@@ -120,7 +125,8 @@ export async function execSql(
 async function execSqlInner(
   session: ChainSession,
   sql: string,
-  onStatus: StatusFn
+  onStatus: StatusFn,
+  params?: SqlParam[]
 ): Promise<{ result: ExecResult; session: ChainSession }> {
   const stmts = splitStatements(sql);
   if (stmts.length === 0) {
@@ -129,7 +135,7 @@ async function execSqlInner(
   let rows: Row[] = [];
   let message = "ok";
   for (const stmt of stmts) {
-    const ast = parseSql(stmt);
+    const ast = parseSql(stmt, params);
     if (ast.kind === "insert") {
       onStatus("INSERT");
     } else if (ast.kind === "select") {
@@ -137,7 +143,7 @@ async function execSqlInner(
     } else {
       onStatus(ast.kind);
     }
-    rows = await session.db.exec(stmt);
+    rows = await session.db.exec(stmt, params);
     message = messageFor(ast, rows);
   }
   onStatus("Refreshing catalog");

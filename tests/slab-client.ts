@@ -85,6 +85,9 @@ if (process.env.RUN_ER_TESTS === "1" || process.env.RUN_CRANK_TESTS === "1") {
       expect(bound).to.equal(
         "INSERT INTO notes (id, author) VALUES (1, 'o''hara')"
       );
+      expect(() => parseSql("INSERT INTO notes (id) VALUES ($1)")).to.throw(
+        /SQL parameter \$1 is missing/
+      );
       expect(isLegacyLocalPageId("zz".repeat(32))).to.equal(false);
       expect(isLegacyLocalPageId("ab".repeat(32))).to.equal(true);
       expect(() => parseSql("SELECT * FROM a JOIN b ON a.id = b.id")).to.throw(

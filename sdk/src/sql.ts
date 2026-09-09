@@ -222,6 +222,10 @@ function exprValue(expr: Expr): SqlValue {
       subset("DEFAULT");
     case "ref":
       subset("column reference in a value");
+    case "parameter":
+      throw new Error(
+        `SQL parameter ${expr.name.startsWith("$") ? expr.name : `$${expr.name}`} is missing`
+      );
     default:
       subset("expression");
   }
@@ -490,7 +494,7 @@ function mapStatement(stmt: Statement): ParsedSql {
 }
 
 export function parseSql(sql: string, params?: SqlParam[]): ParsedSql {
-  const bound = params && params.length > 0 ? bindSql(sql, params) : sql;
+  const bound = bindSql(sql, params ?? []);
   const text = bound.trim();
   if (!text) {
     subset();

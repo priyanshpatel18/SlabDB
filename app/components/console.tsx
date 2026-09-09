@@ -39,8 +39,25 @@ import {
 } from "@/lib/session";
 import { fundIrys } from "@/lib/irys-store";
 import { parseSql, splitStatements } from "@/lib/sql";
-import { PAGE_BYTES, type SqlValue } from "@/lib/sql-types";
+import { PAGE_BYTES, type SqlParam, type SqlValue } from "@/lib/sql-types";
 import { NS_LABEL, shortAddr } from "@/lib/cluster";
+
+function parseBindParams(text: string): SqlParam[] | undefined {
+  const raw = text.trim();
+  if (!raw) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Params must be a JSON array, for example [1, "ada", "first note"]');
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('Params must be a JSON array, for example [1, "ada", "first note"]');
+  }
+  return parsed as SqlParam[];
+}
 
 const SAMPLE = `CREATE TABLE notes (id int8 PRIMARY KEY, author text NOT NULL, body text NOT NULL);`;
 const EMPTY_RELS: RelInfo[] = [];
@@ -78,7 +95,10 @@ function tableFromSql(sql: string): string | null {
       continue;
     }
   }
-  return null;
+  const named = /\b(?:from|into|update|table)\s+"?([a-z_][a-z0-9_]*)"?/i.exec(
+    sql
+  );
+  return named?.[1]?.toLowerCase() ?? null;
 }
 
 export function Console() {
@@ -107,6 +127,7 @@ export function Console() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
   const [sql, setSql] = useState(SAMPLE);
+  const [paramsText, setParamsText] = useState("");
   const [result, setResult] = useState<ExecResult>({ rows: [], message: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -165,11 +186,18 @@ export function Console() {
         setError("Sign in first");
         return;
       }
+      let params: SqlParam[] | undefined;
+      try {
+        params = parseBindParams(paramsText);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Params are invalid");
+        return;
+      }
       setSql(source);
       setBusy(true);
       setRunStatus("Running");
       setError(null);
-      void execSql(session, source, setRunStatus)
+      void execSql(session, source, setRunStatus, params)
         .then(({ result: next, session: updated }) => {
           setSession(updated);
           apply(source, next);
@@ -193,7 +221,7 @@ export function Console() {
           setRunStatus(null);
         });
     },
-    [session, apply],
+    [session, apply, paramsText],
   );
 
   const reload = useCallback(() => {
@@ -519,6 +547,25 @@ export function Console() {
                 }}
                 className="min-h-36 resize-y rounded-none border-0 bg-transparent px-4 py-3 font-mono text-sm dark:bg-transparent"
               />
+              <div className="border-t border-border px-4 py-2.5">
+                <label className="sr-only" htmlFor="slab-sql-params">
+                  SQL params JSON array
+                </label>
+                <Input
+                  id="slab-sql-params"
+                  value={paramsText}
+                  spellCheck={false}
+                  placeholder='Params JSON array, for example [1, "ada", "first note"]'
+                  onChange={(e) => setParamsText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      if (canRun) runSql(sql);
+                    }
+                  }}
+                  className="h-9 border-0 bg-transparent px-0 font-mono text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+                />
+              </div>
             </section>
 
             <section className="overflow-hidden rounded-lg border border-border bg-card">
