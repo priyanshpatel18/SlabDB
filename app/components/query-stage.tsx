@@ -26,16 +26,16 @@ function paintSql(source: string) {
 
 export function QueryStage() {
   const reduce = useReducedMotion();
-  const [typed, setTyped] = useState(reduce ? QUERY.length : 0);
-  const [focus, setFocus] = useState(0);
-  const done = typed >= QUERY.length;
+  if (reduce) {
+    return <QueryStageView typed={QUERY.length} />;
+  }
+  return <QueryStageTyped />;
+}
+
+function QueryStageTyped() {
+  const [typed, setTyped] = useState(0);
 
   useEffect(() => {
-    if (reduce) {
-      setTyped(QUERY.length);
-      return;
-    }
-    setTyped(0);
     const id = window.setInterval(() => {
       setTyped((n) => {
         if (n >= QUERY.length) {
@@ -46,15 +46,22 @@ export function QueryStage() {
       });
     }, 28);
     return () => window.clearInterval(id);
-  }, [reduce]);
+  }, []);
+
+  return <QueryStageView typed={typed} />;
+}
+
+function QueryStageView({ typed }: { typed: number }) {
+  const [focus, setFocus] = useState(0);
+  const done = typed >= QUERY.length;
 
   useEffect(() => {
-    if (!done || reduce) return;
+    if (!done) return;
     const id = window.setInterval(() => {
       setFocus((n) => (n + 1) % ROWS.length);
     }, 2200);
     return () => window.clearInterval(id);
-  }, [done, reduce]);
+  }, [done]);
 
   return (
     <aside

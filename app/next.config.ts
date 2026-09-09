@@ -7,6 +7,9 @@ const slabRoot = path.resolve(appDir, "..");
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: slabRoot,
+  outputFileTracingIncludes: {
+    "/docs/**": ["../docs/**"],
+  },
   turbopack: {},
   transpilePackages: [
     "slabdb",

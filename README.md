@@ -12,7 +12,7 @@ Landing and `/console` live in `app/`. Sign in with Privy (email or Google). Sla
 cd app && bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Host `app/` on Vercel (Root Directory `app/`). The app depends on `"slabdb": "file:../sdk"`, so keep `sdk/` in the git tree. Do not put Helius keys in the Next.js client. Wallet RPC is `https://rpc.magicblock.app/devnet`.
+Open [http://localhost:3000](http://localhost:3000). Docs are at `/docs`. Host `app/` on Vercel (Root Directory `app/`). The console depends on npm `slabdb`. Do not put Helius keys in the Next.js client. Wallet RPC is `https://rpc.magicblock.app/devnet`.
 
 ## Privy
 
@@ -50,7 +50,7 @@ await db.exec("INSERT INTO notes (id, author, body) VALUES (1, 'ada', 'first not
 const rows = await db.exec("SELECT * FROM notes WHERE id = 1");
 ```
 
-See `sdk/README.md`. In this repo the app depends on `"slabdb": "file:../sdk"`.
+See `sdk/README.md`. The console depends on npm `slabdb`. Change the protocol client in `sdk/`, publish a new version, then bump the version in `app/package.json`.
 
 `INSERT` writes one row. A full page calls `prepare_page` for the next page. PK `WHERE` uses the on-chain index. `CREATE INDEX` then `WHERE col =` uses a secondary `Index` PDA. Other `WHERE` clauses scan pages in the store. `UPDATE` / `DELETE` rewrite the Irys page, then update the pointer and index. `DROP TABLE` frees the catalog slot. Oids are not reused.
 

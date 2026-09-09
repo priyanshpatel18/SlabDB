@@ -13,6 +13,12 @@ export function SiteHeader() {
         </Link>
         <nav className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link
+            href="/docs"
+            className="shrink-0 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Docs
+          </Link>
+          <Link
             href="/console"
             className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:inline"
           >

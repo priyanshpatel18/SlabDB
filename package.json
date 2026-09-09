@@ -3,13 +3,13 @@
   "license": "ISC",
   "packageManager": "bun@1.4.2",
   "workspaces": [
-    "sdk",
     "app"
   ],
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
     "lint:app": "bun run --cwd app lint",
+    "build:sdk": "bun run --cwd sdk build",
     "build:app": "bun run --cwd app build",
     "prepare": "husky"
   },
@@ -18,7 +18,9 @@
     "@irys/upload": "^0.0.15",
     "@irys/upload-solana": "^0.1.8",
     "@magicblock-labs/ephemeral-rollups-sdk": "0.14.3",
-    "@solana/web3.js": "1.98.4"
+    "@solana/web3.js": "1.98.4",
+    "@noble/hashes": "2.4.0",
+    "pgsql-ast-parser": "12.0.2"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",

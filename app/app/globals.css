@@ -332,3 +332,14 @@
     opacity: 0;
   }
 }
+
+.slab-scroll-quiet {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.slab-scroll-quiet::-webkit-scrollbar {
+  display: none;
+}
+

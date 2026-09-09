@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { RelInfo } from "slabdb";
 import {
   delegateSession,
   execSql,
@@ -41,6 +42,7 @@ import { PAGE_BYTES, type SqlValue } from "@/lib/sql-types";
 import { NS_LABEL, shortAddr } from "@/lib/cluster";
 
 const SAMPLE = `CREATE TABLE notes (id int8 PRIMARY KEY, author text NOT NULL, body text NOT NULL);`;
+const EMPTY_RELS: RelInfo[] = [];
 
 function formatValue(value: SqlValue): string {
   if (typeof value === "bigint") return value.toString();
@@ -77,16 +79,23 @@ export function Console() {
   const { publicKey, connected, agentEnabled, agentAvailable, enableAgent } =
     wallet;
 
-  const signer: SlabSigner | null =
-    publicKey && connected
-      ? {
-          publicKey,
-          signTransaction: wallet.signTransaction,
-          signAllTransactions: wallet.signAllTransactions,
-          signMessage: wallet.signMessage,
-        }
-      : null;
+  const signer = useMemo<SlabSigner | null>(() => {
+    if (!publicKey || !connected) return null;
+    return {
+      publicKey,
+      signTransaction: wallet.signTransaction,
+      signAllTransactions: wallet.signAllTransactions,
+      signMessage: wallet.signMessage,
+    };
+  }, [
+    publicKey,
+    connected,
+    wallet.signTransaction,
+    wallet.signAllTransactions,
+    wallet.signMessage,
+  ]);
 
+  const signerId = signer?.publicKey.toBase58() ?? "";
   const [session, setSession] = useState<ChainSession | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
@@ -97,19 +106,21 @@ export function Console() {
   const [runStatus, setRunStatus] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [boundId, setBoundId] = useState(signerId);
+
+  if (signerId !== boundId) {
+    setBoundId(signerId);
+    setSession(null);
+    setBootError(null);
+    setResult({ rows: [], message: "" });
+    setError(null);
+    setActive(null);
+    setBooting(Boolean(signerId));
+  }
 
   useEffect(() => {
-    if (!signer) {
-      setSession(null);
-      setBootError(null);
-      setResult({ rows: [], message: "" });
-      setError(null);
-      setActive(null);
-      return;
-    }
+    if (!signer) return;
     let cancelled = false;
-    setBooting(true);
-    setBootError(null);
     void openSession(signer)
       .then((next) => {
         if (cancelled) return;
@@ -121,19 +132,18 @@ export function Console() {
             ? `Loaded ${next.rels.length} table${next.rels.length === 1 ? "" : "s"} for this wallet`
             : "Slab ready. CREATE TABLE on base, then INSERT on the public ER.",
         });
+        setBooting(false);
       })
       .catch((err) => {
         if (cancelled) return;
         setSession(null);
         setBootError(err instanceof Error ? err.message : "Could not open slab");
-      })
-      .finally(() => {
-        if (!cancelled) setBooting(false);
+        setBooting(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [connected, publicKey?.toBase58(), wallet.signTransaction]);
+  }, [signer]);
 
   const apply = useCallback((nextSql: string, next: ExecResult, table?: string) => {
     setSql(nextSql);
@@ -233,7 +243,7 @@ export function Console() {
     [runSql],
   );
 
-  const tables = session?.rels ?? [];
+  const tables = session?.rels ?? EMPTY_RELS;
   const rowTotal = tables.reduce((n, rel) => n + rel.nTuples, 0);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -342,7 +352,15 @@ export function Console() {
                 : "Base layer"
               : "Sign in"}
           </p>
-          <WalletButton />
+          <div className="ml-auto flex items-center gap-3">
+            <Link
+              href="/docs"
+              className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+            >
+              Docs
+            </Link>
+            <WalletButton />
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">

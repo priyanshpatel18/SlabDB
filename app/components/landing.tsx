@@ -21,12 +21,18 @@ export function Landing() {
             to Irys. The console talks to the program with a Privy embedded
             wallet.
           </p>
-          <div className="mt-8">
+          <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link href="/console" className="slab-cta">
               Open console
               <span className="slab-cta-arrow" aria-hidden>
                 →
               </span>
+            </Link>
+            <Link
+              href="/docs"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Docs
             </Link>
           </div>
         </section>

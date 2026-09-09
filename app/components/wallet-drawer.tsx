@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useExportWallet } from "@privy-io/react-auth/solana";
 import {
   ArrowLeft,
@@ -75,27 +75,27 @@ export function WalletDrawer() {
   const [agentBusy, setAgentBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
 
-  const load = useCallback(async (pubkey: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [nextHoldings, nextActivity] = await Promise.all([
-        loadHoldings(pubkey),
-        loadActivity(pubkey),
-      ]);
-      setHoldings(nextHoldings);
-      setActivity(nextActivity);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load wallet");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (!open || !address) return;
-    void load(address);
-  }, [address, load, open, tick]);
+    let cancelled = false;
+    void Promise.all([loadHoldings(address), loadActivity(address)]).then(
+      ([nextHoldings, nextActivity]) => {
+        if (cancelled) return;
+        setHoldings(nextHoldings);
+        setActivity(nextActivity);
+        setError(null);
+        setLoading(false);
+      },
+      (err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Could not load wallet");
+        setLoading(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [address, open, tick]);
 
   const totalUsd = useMemo(
     () => holdings.reduce((sum, row) => sum + row.usd, 0),
@@ -126,7 +126,12 @@ export function WalletDrawer() {
     <Drawer
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setView("main");
+        if (!next) {
+          setView("main");
+          return;
+        }
+        setLoading(true);
+        setError(null);
       }}
       showSwipeHandle
       swipeDirection="right"
@@ -247,7 +252,11 @@ export function WalletDrawer() {
               address={address}
               exportBusy={exportBusy}
               onExport={onExport}
-              onRefresh={() => setTick((n) => n + 1)}
+              onRefresh={() => {
+                setLoading(true);
+                setError(null);
+                setTick((n) => n + 1);
+              }}
             />
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
@@ -271,7 +280,11 @@ export function WalletDrawer() {
                     variant="outline"
                     size="sm"
                     className="min-h-10 sm:min-h-7"
-                    onClick={() => setTick((n) => n + 1)}
+                    onClick={() => {
+                      setLoading(true);
+                      setError(null);
+                      setTick((n) => n + 1);
+                    }}
                   >
                     Retry
                   </Button>
