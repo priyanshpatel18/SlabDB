@@ -129,7 +129,7 @@ export async function openSession(wallet: SlabSigner): Promise<ChainSession> {
     programEr,
     wallet: wallet.publicKey,
     ns: nsBytes(NS_LABEL),
-    store: new BrowserIrysPageStore(),
+    store: new BrowserIrysPageStore(wallet),
     remainingAccounts: target.remainingAccounts,
   });
   await db.initialize();
@@ -162,7 +162,7 @@ export async function execSql(
     store.onStatus = onStatus;
   }
   try {
-    return await withTimeout(execSqlInner(session, sql, onStatus), 12_000, "SQL");
+    return await withTimeout(execSqlInner(session, sql, onStatus), 90_000, "SQL");
   } finally {
     if ("onStatus" in store) {
       store.onStatus = () => {};
@@ -227,5 +227,5 @@ export function statusLine(
   const lane = session.delegated ? "er" : "base";
   const delegated = session.delegated ? "yes" : "no";
   const agent = agentEnabled ? "yes" : "no";
-  return `ns=${NS_LABEL} store=session cluster=devnet lane=${lane} delegated=${delegated} agent=${agent}`;
+  return `ns=${NS_LABEL} store=irys cluster=devnet lane=${lane} delegated=${delegated} agent=${agent}`;
 }

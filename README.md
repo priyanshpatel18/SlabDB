@@ -33,7 +33,7 @@ Types: bool, int4, int8, text ≤ 1 KiB, timestamptz.
 
 Accounts: `Slab`, `Catalog`, `PagePtr`, `Index`. Init creates 16 table slots. `realloc_catalog` on L1 grows the catalog to 32. Do that before delegate.
 
-Console write-ack: SHA-256 hex id in the PagePtr (valid Irys-shaped ASCII). Bytes stay in session storage for this tab. Local tests may use a fixture TXID. Optional Fund Irys prepays the bundler for later durable upload.
+Console write-ack: Irys receipt id in the PagePtr. INSERT uploads the 8 KiB page and waits for the gateway so other wallets can SELECT. Local tests may use a fixture TXID. Fund Irys if the bundler has no balance.
 
 ## SDK
 

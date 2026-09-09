@@ -372,7 +372,7 @@ export function Console() {
                 <p className="mt-1 text-sm break-words text-muted-foreground">
                   {activeRel
                     ? `oid ${activeRel.oid} · ${activeRel.columns.map((c: { name: string; typ: string }) => `${c.name} ${c.typ}`).join(", ")}`
-                    : "Postgres SQL. CREATE TABLE on base. INSERT on the public ER. Pages stay in this tab."}
+                    : "Postgres SQL. CREATE TABLE on base. INSERT on the public ER. Pages go to Irys."}
                 </p>
               </div>
               <div className="flex w-full gap-2 sm:w-auto sm:flex-wrap sm:items-center">

@@ -22,7 +22,7 @@ PK `WHERE` uses the on-chain index. `CREATE INDEX` then `WHERE col =` uses a sec
 
 ## Pages
 
-Each page is 8,192 bytes. A full page calls `prepare_page` for the next page. `UPDATE` and `DELETE` rewrite the page, then update the pointer and index. `DROP TABLE` frees the catalog slot. Oids are not reused.
+Each page is 8,192 bytes. INSERT uploads the page to Irys and writes the receipt id on-chain. A full page calls `prepare_page` for the next page. `UPDATE` and `DELETE` rewrite the page, then update the pointer and index. `DROP TABLE` frees the catalog slot. Oids are not reused.
 
 ## Routing
 
