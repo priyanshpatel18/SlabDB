@@ -27,9 +27,11 @@ Do not introduce a second accent. Charts stay in the copper-ochre family.
 
 ## Type
 
-- UI: IBM Plex Sans
-- Data / SQL: IBM Plex Mono
-- Wordmark only: Newsreader italic
+GitHub-like system stack. No display serif. No webfonts in the app.
+
+- UI / wordmark: system UI (`-apple-system`, Segoe UI, Helvetica)
+- Paths, SQL, addresses: system mono (`ui-monospace`, SF Mono, Menlo)
+- OG cards still embed a sans TTF. Satori cannot use system fonts.
 
 ## Radius
 

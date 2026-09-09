@@ -7,22 +7,13 @@ export const OG_TYPE = "image/png";
 
 export async function loadOgFonts() {
   const dir = join(process.cwd(), "lib/fonts");
-  const [sans, display] = await Promise.all([
-    readFile(join(dir, "IBMPlexSans-Medium.ttf")),
-    readFile(join(dir, "Newsreader-Italic.ttf")),
-  ]);
+  const sans = await readFile(join(dir, "IBMPlexSans-Medium.ttf"));
   return [
     {
-      name: "IBM Plex Sans",
+      name: "Slab Sans",
       data: sans,
       weight: 500 as const,
       style: "normal" as const,
-    },
-    {
-      name: "Newsreader",
-      data: display,
-      weight: 500 as const,
-      style: "italic" as const,
     },
   ];
 }
@@ -53,7 +44,7 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
         <div
           style={{
             display: "flex",
-            fontFamily: "IBM Plex Sans",
+            fontFamily: "Slab Sans",
             fontSize: 22,
             letterSpacing: "0.18em",
             textTransform: "uppercase",
@@ -66,10 +57,11 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
           style={{
             display: "flex",
             marginTop: 28,
-            fontFamily: "Newsreader",
-            fontSize: 92,
-            fontStyle: "italic",
-            lineHeight: 0.95,
+            fontFamily: "Slab Sans",
+            fontSize: 72,
+            fontWeight: 600,
+            letterSpacing: "-0.03em",
+            lineHeight: 1,
             color: "#f0ebe4",
           }}
         >
@@ -88,7 +80,7 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
             display: "flex",
             marginTop: 36,
             maxWidth: 860,
-            fontFamily: "IBM Plex Sans",
+            fontFamily: "Slab Sans",
             fontSize: 40,
             lineHeight: 1.2,
             color: "#f0ebe4",
@@ -100,7 +92,7 @@ export function OgCard({ kicker, title, footer }: OgCardProps) {
       <div
         style={{
           display: "flex",
-          fontFamily: "IBM Plex Sans",
+          fontFamily: "Slab Sans",
           fontSize: 22,
           color: "#a89888",
         }}

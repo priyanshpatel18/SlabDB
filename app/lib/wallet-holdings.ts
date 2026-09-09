@@ -137,6 +137,11 @@ export async function loadActivity(address: string): Promise<ActivityItem[]> {
   }));
 }
 
+export async function loadSolLamports(address: string): Promise<number> {
+  const connection = new Connection(BASE_RPC_URL, "confirmed");
+  return connection.getBalance(new PublicKey(address));
+}
+
 export function formatUsd(n: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

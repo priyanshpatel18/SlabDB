@@ -6,7 +6,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "next-themes";
 import { SlabWalletProvider } from "@/hooks/use-slab-wallet";
+import { AccountProvider } from "@/hooks/use-account";
 import { AgentGuideDialog } from "@/components/agent-guide-dialog";
+import { FundGate } from "@/components/fund-gate";
+import { OnboardingDialog } from "@/components/onboarding-dialog";
 import {
   PRIVY_ACCENT,
   PRIVY_APP_ID,
@@ -17,11 +20,16 @@ import {
 function Inner({ children }: { children: ReactNode }) {
   return (
     <SlabWalletProvider>
-      <TooltipProvider>
-        {children}
-        <AgentGuideDialog />
-        <Toaster />
-      </TooltipProvider>
+      <AccountProvider>
+        <TooltipProvider>
+          <FundGate>
+            {children}
+            <OnboardingDialog />
+          </FundGate>
+          <AgentGuideDialog />
+          <Toaster />
+        </TooltipProvider>
+      </AccountProvider>
     </SlabWalletProvider>
   );
 }

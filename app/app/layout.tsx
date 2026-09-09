@@ -1,28 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Newsreader } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { getSEOTags } from "@/lib/seo";
 import { SEO_KEYWORDS } from "@/lib/site";
 import "./globals.css";
-
-const sans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-sans",
-});
-
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-mono",
-});
-
-const display = Newsreader({
-  subsets: ["latin"],
-  style: ["italic"],
-  weight: ["400", "500", "600"],
-  variable: "--font-display",
-});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -49,12 +29,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`dark ${sans.variable} ${mono.variable} ${display.variable} h-full antialiased`}
-      suppressHydrationWarning
-    >
-      <body className="flex min-h-full flex-col overflow-x-hidden bg-background text-foreground">
+    <html lang="en" className="dark h-full font-sans antialiased" suppressHydrationWarning>
+      <body className="flex min-h-full flex-col overflow-x-hidden bg-background font-sans text-foreground">
         <Providers>{children}</Providers>
       </body>
     </html>

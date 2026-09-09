@@ -17,6 +17,40 @@ export const NS_LABEL = "default";
 export const HOME_NS = "home";
 export const HOME_REPO = "home";
 export const README_PATH = "README.md";
+export const PROFILE_TABLE = "profile";
+export const PROFILE_ROW = "me";
+export const USERS_TABLE = "users";
+export const SOL_FAUCET_URL = "https://faucet.solana.com";
+
+export const RESERVED_USERNAMES = [
+  "docs",
+  "console",
+  "settings",
+  "api",
+  "users",
+  "home",
+  "profile",
+  "sitemap",
+  "robots",
+  "manifest",
+  "icon",
+  "apple-icon",
+  "opengraph-image",
+  "twitter-image",
+  "_next",
+] as const;
+
+export function isReservedUsername(uid: string): boolean {
+  const key = uid.trim().toLowerCase();
+  if (key === "llms.txt") {
+    return true;
+  }
+  return (RESERVED_USERNAMES as readonly string[]).includes(key);
+}
+
+export function profilePath(uid: string): string {
+  return `/${encodeURIComponent(uid)}`;
+}
 
 export function explorerTxUrl(signature: string) {
   return `https://explorer.solana.com/tx/${signature}?cluster=${CLUSTER}`;

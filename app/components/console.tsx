@@ -324,9 +324,7 @@ export function Console() {
           href="/"
           className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-4"
         >
-          <span className="font-display text-xl italic leading-none tracking-tight">
-            Slab
-          </span>
+          <span className="text-xl font-semibold tracking-tight">Slab</span>
         </Link>
         <div className="px-4 py-4">
           <p className="text-sm font-medium">{NS_LABEL}</p>
@@ -401,9 +399,7 @@ export function Console() {
       <div className="relative flex min-w-0 w-full flex-1 flex-col overflow-x-hidden pt-[env(safe-area-inset-top)] md:pt-0">
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
           <Link href="/" className="flex shrink-0 items-center md:hidden">
-            <span className="font-display text-xl italic leading-none tracking-tight">
-              Slab
-            </span>
+            <span className="text-xl font-semibold tracking-tight">Slab</span>
           </Link>
           <p className="hidden text-sm text-muted-foreground md:block">
             {session

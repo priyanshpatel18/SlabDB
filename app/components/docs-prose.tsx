@@ -3,7 +3,7 @@ import Markdown from "react-markdown";
 
 const docsComponents: Components = {
   h1: ({ children }) => (
-    <h1 className="font-display text-3xl italic tracking-tight sm:text-4xl">
+    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
       {children}
     </h1>
   ),

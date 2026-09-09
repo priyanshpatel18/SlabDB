@@ -27,8 +27,8 @@ export function assertRepoName(raw: string): string {
       "Repo name must start with a letter and use only a-z, 0-9, and _"
     );
   }
-  if (name === HOME_REPO) {
-    throw new Error("home is reserved for the homepage");
+  if (name === HOME_REPO || name === "profile" || name === "users") {
+    throw new Error(`${name} is reserved`);
   }
   return name;
 }
