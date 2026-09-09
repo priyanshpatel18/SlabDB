@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-bun run --cwd app build
+bun run build:app
