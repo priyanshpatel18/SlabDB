@@ -11,7 +11,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { TEXT_MAX_BYTES } from "slabdb";
 import { ensureRepo, listFiles, openDb, upsertFiles } from "./chain";
 import { HELP } from "./help";
-import { lookupClaim, parseRemote } from "./remote";
+import { cmdLogin, cmdLogout } from "./login";
+import { lookupClaim, parseRemote, parseRemoteUrl } from "./remote";
+import { makeCommitId } from "./history";
 import {
   README_PATH,
   assertRepoName,
@@ -25,8 +27,14 @@ import {
   saveConfig,
   saveIndex,
   snapshotHash,
+  type SlabCommit,
   type StagedFile,
 } from "./repo";
+import {
+  defaultApi,
+  loadCredentials,
+  pushCommit,
+} from "./auth";
 import { loadWallet } from "./wallet";
 
 const SKIP = new Set([
@@ -50,15 +58,27 @@ function extractOptions(argv: string[]) {
   const rest: string[] = [];
   let keypair: string | undefined;
   let message: string | undefined;
+  let api: string | undefined;
+  let token: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const item = argv[i];
-    if (item === "--keypair" || item === "-m" || item === "--message") {
+    if (
+      item === "--keypair" ||
+      item === "-m" ||
+      item === "--message" ||
+      item === "--api" ||
+      item === "--token"
+    ) {
       const value = argv[++i];
       if (!value || value.startsWith("-")) {
         throw new Error(`${item} needs a value`);
       }
       if (item === "--keypair") {
         keypair = value;
+      } else if (item === "--api") {
+        api = value;
+      } else if (item === "--token") {
+        token = value;
       } else {
         message = value;
       }
@@ -72,9 +92,17 @@ function extractOptions(argv: string[]) {
       message = item.slice("--message=".length);
       continue;
     }
+    if (item.startsWith("--api=")) {
+      api = item.slice("--api=".length);
+      continue;
+    }
+    if (item.startsWith("--token=")) {
+      token = item.slice("--token=".length);
+      continue;
+    }
     rest.push(item);
   }
-  return { rest, keypair, message };
+  return { rest, keypair, message, api, token };
 }
 
 function isBinary(buf: Buffer): boolean {
@@ -176,6 +204,7 @@ async function cmdClone(args: string[], keypair?: string) {
     repo: spec.repo,
     owner: claim.wallet,
     uid: spec.uid,
+    remote: `${defaultApi()}/${spec.uid}/${spec.repo}`,
   });
   for (const file of files) {
     const path = join(dest, file.path);
@@ -214,24 +243,163 @@ function cmdCommit(args: string[], message?: string) {
     throw new Error("Usage: slab commit -m <message>");
   }
   const root = findRoot();
+  const config = loadConfig(root);
   const index = loadIndex(root);
   if (index.staged.length === 0) {
     throw new Error("Nothing staged. Run slab add first.");
   }
-  saveCommit(root, { message: message.trim(), files: index.staged });
+  const creds = loadCredentials();
+  const created_at = new Date().toISOString();
+  const parent = config.head ?? null;
+  const id = makeCommitId(
+    `${config.repo}:${parent}:${created_at}:${message.trim()}:${index.staged
+      .map((file) => file.path)
+      .sort()
+      .join("|")}`
+  );
+  const commit: SlabCommit = {
+    id,
+    parent,
+    message: message.trim(),
+    created_at,
+    author: creds?.uid || "",
+    files: index.staged,
+  };
+  saveCommit(root, commit);
   saveIndex(root, { staged: [] });
   process.stdout.write(
-    `[${loadConfig(root).repo}] ${message.trim()} (${index.staged.length} file${index.staged.length === 1 ? "" : "s"})\n`
+    `[${id}] ${commit.message} (${commit.files.length} file${commit.files.length === 1 ? "" : "s"})\n`
   );
+}
+
+function cmdRemote(args: string[]) {
+  const root = findRoot();
+  const config = loadConfig(root);
+  if (args.length === 0) {
+    if (!config.remote) {
+      throw new Error("No remote. Run slab remote add <url>");
+    }
+    process.stdout.write(`origin\t${config.remote}\n`);
+    return;
+  }
+  if (args[0] !== "add") {
+    throw new Error("Usage: slab remote add [origin] <url>");
+  }
+  const urlRaw = args.length >= 3 ? args[2] : args[1];
+  if (!urlRaw) {
+    throw new Error("Usage: slab remote add [origin] <url>");
+  }
+  const remote = parseRemoteUrl(urlRaw);
+  saveConfig(root, {
+    ...config,
+    repo: remote.repo,
+    uid: remote.uid,
+    remote: remote.url,
+  });
+  process.stdout.write(`Remote origin ${remote.url}\n`);
+}
+
+function withCommitId(
+  commit: SlabCommit,
+  repo: string,
+  head?: string
+): SlabCommit {
+  if (commit.id && commit.created_at) {
+    return commit;
+  }
+  const created_at = commit.created_at || new Date().toISOString();
+  const parent = commit.parent ?? head ?? null;
+  const message = commit.message;
+  const id = makeCommitId(
+    `${repo}:${parent}:${created_at}:${message}:${commit.files
+      .map((file) => file.path)
+      .sort()
+      .join("|")}`
+  );
+  return {
+    id,
+    parent,
+    message,
+    created_at,
+    author: commit.author || "",
+    files: commit.files,
+  };
 }
 
 async function cmdPush(keypair?: string) {
   const root = findRoot();
   const config = loadConfig(root);
-  const commit = loadCommit(root);
-  if (!commit || commit.files.length === 0) {
+  const pending = loadCommit(root);
+  if (!pending || pending.files.length === 0) {
     throw new Error("Nothing to push. Run slab commit first.");
   }
+  const commit = withCommitId(pending, config.repo, config.head);
+  if (keypair) {
+    await cmdPushKeypair(keypair, root, config, commit);
+    return;
+  }
+  if (!config.remote) {
+    throw new Error("No remote. Run slab remote add <url>");
+  }
+  const remote = parseRemoteUrl(config.remote);
+  const creds = loadCredentials();
+  if (!creds) {
+    throw new Error("Run slab login first");
+  }
+  if (creds.api !== remote.api) {
+    throw new Error(
+      `This remote is ${remote.api}. You are logged in to ${creds.api}. Run slab login --api ${remote.api}`
+    );
+  }
+  if (creds.uid !== remote.uid) {
+    throw new Error(
+      `Logged in as ${creds.uid}. This remote belongs to ${remote.uid}.`
+    );
+  }
+  if (config.head === commit.id) {
+    process.stdout.write("Everything up to date\n");
+    return;
+  }
+  const result = await pushCommit(creds.api, creds.token, {
+    uid: remote.uid,
+    repo: remote.repo,
+    commit: {
+      id: commit.id,
+      parent: commit.parent,
+      message: commit.message,
+      created_at: commit.created_at,
+      author: commit.author || creds.uid,
+      files: commit.files,
+    },
+  });
+  saveConfig(root, {
+    ...config,
+    uid: remote.uid,
+    repo: remote.repo,
+    owner: creds.wallet,
+    remote: remote.url,
+    head: result.id,
+    pushed: snapshotHash(commit.files),
+  });
+  saveCommit(root, commit);
+  if (result.wrote === 0) {
+    process.stdout.write(
+      `Pushed ${result.id} to ${result.uid}/${result.repo}\n`
+    );
+  } else {
+    process.stdout.write(
+      `Pushed ${result.wrote} file${result.wrote === 1 ? "" : "s"} to ${result.uid}/${result.repo} (${result.id})\n`
+    );
+  }
+  process.stdout.write(`${remote.url}\n`);
+}
+
+async function cmdPushKeypair(
+  keypair: string,
+  root: string,
+  config: ReturnType<typeof loadConfig>,
+  commit: SlabCommit
+) {
   const hash = snapshotHash(commit.files);
   if (config.pushed === hash) {
     process.stdout.write("Everything up to date\n");
@@ -256,6 +424,7 @@ async function cmdPush(keypair?: string) {
   saveConfig(root, {
     ...config,
     owner: config.owner || wallet.publicKey.toBase58(),
+    head: commit.id,
     pushed: hash,
   });
   process.stdout.write(
@@ -269,7 +438,7 @@ async function main() {
     process.stdout.write(HELP);
     process.exit(argv.length === 0 ? 1 : 0);
   }
-  const { rest, keypair, message } = extractOptions(argv);
+  const { rest, keypair, message, api, token } = extractOptions(argv);
   const cmd = rest.shift() ?? "";
   const args = rest;
   try {
@@ -279,6 +448,18 @@ async function main() {
     }
     if (cmd === "clone") {
       await cmdClone(args, keypair);
+      return;
+    }
+    if (cmd === "login") {
+      await cmdLogin({ api, token });
+      return;
+    }
+    if (cmd === "logout") {
+      await cmdLogout();
+      return;
+    }
+    if (cmd === "remote") {
+      cmdRemote(args);
       return;
     }
     if (cmd === "add") {

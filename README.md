@@ -25,6 +25,22 @@ Set `NEXT_PUBLIC_PRIVY_APP_ID` in `app/.env.local`. In the Privy Dashboard:
 
 The user owns the embedded wallet. **Enable agent** adds the key quorum as a second signer. After that, SQL writes sign through `/api/agent/sign` and send to the ER.
 
+## CLI
+
+Git-like commands live in `cli/`. `init`, `add`, `commit`, and `remote add` stay on disk. `login` uses the same Privy account as the site and stores a user token in `~/.config/slab/credentials.json`. `push` POSTs that commit to `/api/cli/push`. The server signs as that user. The authorization key never goes in the CLI.
+
+```bash
+cd cli
+bun src/index.ts init hello-web
+bun src/index.ts login
+bun src/index.ts remote add https://slab.priyanshpatel.com/your_uid/hello-web
+bun src/index.ts add README.md
+bun src/index.ts commit -m "Initial commit"
+bun src/index.ts push
+```
+
+See `cli/README.md`. CLI push also needs an Irys payer on the app server (`IRYS_SECRET_KEY` or `ANCHOR_WALLET`).
+
 ## v0 SQL
 
 `CREATE TABLE`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `DROP TABLE`, `CREATE INDEX`. PK `WHERE`. Secondary index `WHERE` after `CREATE INDEX` (backfills existing rows). No JOIN, BEGIN, or COPY.

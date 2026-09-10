@@ -39,14 +39,24 @@ function tag(node: GqlNode, name: string): string {
   return node.tags?.find((item) => item.name === name)?.value?.trim() ?? "";
 }
 
-async function graphql(uid: string): Promise<GqlNode[]> {
+async function graphqlTags(
+  extra: { name: string; values: string[] }[]
+): Promise<GqlNode[]> {
+  const tags = [
+    { name: "App-Name", values: [USERNAME_APP] },
+    { name: "App-File", values: [USERNAME_FILE] },
+    ...extra,
+  ]
+    .map(
+      (item) =>
+        `{ name: ${JSON.stringify(item.name)}, values: ${JSON.stringify(item.values)} }`
+    )
+    .join("\n          ");
   const query = {
     query: `query {
       transactions(
         tags: [
-          { name: "App-Name", values: ["${USERNAME_APP}"] }
-          { name: "App-File", values: ["${USERNAME_FILE}"] }
-          { name: "Username", values: ["${uid}"] }
+          ${tags}
         ]
         first: 25
         order: DESC
@@ -151,12 +161,35 @@ export async function lookupUsernameRemote(
   if (!isUsernameFormat(uid) || isReservedUsername(uid)) {
     return null;
   }
-  const nodes = await graphql(uid);
+  const nodes = await graphqlTags([{ name: "Username", values: [uid] }]);
   const wallet = ownerWallet(nodes);
   if (!wallet) {
     return null;
   }
   const latest = nodes.find((node) => tag(node, "Wallet") === wallet);
   const remote = latest ? await readClaim(latest.id) : null;
+  return remote ?? stubProfile(uid, wallet);
+}
+
+export async function lookupWalletRemote(
+  address: string
+): Promise<PublicProfile | null> {
+  const wallet = address.trim();
+  if (!wallet) {
+    return null;
+  }
+  const nodes = await graphqlTags([{ name: "Wallet", values: [wallet] }]);
+  const active = nodes.filter((node) => tag(node, "Active") !== "0");
+  const latest = [...active].sort(
+    (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
+  )[0];
+  if (!latest) {
+    return null;
+  }
+  const uid = tag(latest, "Username");
+  if (!isUsernameFormat(uid) || isReservedUsername(uid)) {
+    return null;
+  }
+  const remote = await readClaim(latest.id);
   return remote ?? stubProfile(uid, wallet);
 }

@@ -39,6 +39,7 @@ export const RESERVED_USERNAMES = [
   "opengraph-image",
   "twitter-image",
   "_next",
+  "cli",
 ] as const;
 
 export function isReservedUsername(uid: string): boolean {

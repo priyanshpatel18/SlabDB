@@ -1,3 +1,4 @@
+import { defaultApi } from "./auth";
 import { IRYS_GATEWAY } from "slabdb";
 
 const APP_NAME = "Slab";
@@ -47,6 +48,61 @@ export function parseRemote(raw: string): RemoteSpec {
     );
   }
   return { uid, repo: repo || "home" };
+}
+
+function assertUserRemote(spec: RemoteSpec): RemoteSpec {
+  if (spec.repo === "home" || spec.repo === "profile" || spec.repo === "users") {
+    throw new Error("Remote must be a user repository");
+  }
+  return spec;
+}
+
+export type RemoteUrl = {
+  api: string;
+  uid: string;
+  repo: string;
+  url: string;
+};
+
+export function parseRemoteUrl(raw: string): RemoteUrl {
+  const value = raw.trim();
+  if (!value) {
+    throw new Error("Remote URL is required");
+  }
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(value);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed) {
+    const spec = assertUserRemote(parseRemote(value));
+    if (!value.includes("/")) {
+      throw new Error("Remote must be uid/repo or a full Slab URL");
+    }
+    const api = defaultApi();
+    return {
+      api,
+      uid: spec.uid,
+      repo: spec.repo,
+      url: `${api}/${spec.uid}/${spec.repo}`,
+    };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Remote URL must be http or https");
+  }
+  const parts = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts.length !== 2) {
+    throw new Error("Remote URL must be https://host/{uid}/{repo}");
+  }
+  const spec = assertUserRemote(parseRemote(`${parts[0]}/${parts[1]}`));
+  const api = `${parsed.protocol}//${parsed.host}`;
+  return {
+    api,
+    uid: spec.uid,
+    repo: spec.repo,
+    url: `${api}/${spec.uid}/${spec.repo}`,
+  };
 }
 
 async function graphql(uid: string): Promise<GqlNode[]> {

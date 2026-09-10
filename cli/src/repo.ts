@@ -12,6 +12,8 @@ export type SlabConfig = {
   repo: string;
   owner: string;
   uid?: string;
+  remote?: string;
+  head?: string;
   pushed?: string;
 };
 
@@ -25,7 +27,11 @@ export type SlabIndex = {
 };
 
 export type SlabCommit = {
+  id: string;
+  parent: string | null;
   message: string;
+  created_at: string;
+  author: string;
   files: StagedFile[];
 };
 
