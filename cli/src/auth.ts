@@ -17,8 +17,16 @@ export function defaultApi(): string {
   );
 }
 
+export function configDir(): string {
+  const override = process.env.SLAB_CONFIG_DIR?.trim();
+  if (override) {
+    return override;
+  }
+  return join(homedir(), ".config", "slab");
+}
+
 export function credentialsPath(): string {
-  return join(homedir(), ".config", "slab", "credentials.json");
+  return join(configDir(), "credentials.json");
 }
 
 export function loadCredentials(): CliCredentials | null {

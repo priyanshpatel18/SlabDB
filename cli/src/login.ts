@@ -25,7 +25,7 @@ function openUrl(url: string) {
   spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
 }
 
-function allowedOrigins(api: string): Set<string> {
+export function allowedOrigins(api: string): Set<string> {
   const allowed = new Set([api]);
   try {
     const url = new URL(api);
@@ -42,7 +42,7 @@ function allowedOrigins(api: string): Set<string> {
   return allowed;
 }
 
-function corsOrigin(origin: string | undefined, api: string): string {
+export function corsOrigin(origin: string | undefined, api: string): string {
   const allowed = allowedOrigins(api);
   if (origin && allowed.has(origin)) {
     return origin;

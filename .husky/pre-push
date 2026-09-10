@@ -1,2 +1,4 @@
 #!/usr/bin/env sh
+bun run test
+bun run --cwd cli typecheck
 bun run build:app

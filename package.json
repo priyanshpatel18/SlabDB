@@ -13,6 +13,10 @@
     "lint:app": "bun run --cwd app lint",
     "build:sdk": "bun run --cwd sdk build",
     "build:app": "bun run build:sdk && bun run --cwd app build",
+    "test:cli": "bun run --cwd cli test",
+    "test:app": "bun run --cwd app test",
+    "test": "bun run test:cli && bun run test:app",
+    "prepush": "bun run test && bun run --cwd cli typecheck && bun run build:app",
     "slab": "bun cli/src/index.ts",
     "prepare": "husky"
   },

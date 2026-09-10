@@ -76,10 +76,10 @@ export function parseRemoteUrl(raw: string): RemoteUrl {
     parsed = null;
   }
   if (!parsed) {
-    const spec = assertUserRemote(parseRemote(value));
     if (!value.includes("/")) {
       throw new Error("Remote must be uid/repo or a full Slab URL");
     }
+    const spec = assertUserRemote(parseRemote(value));
     const api = defaultApi();
     return {
       api,
