@@ -9,11 +9,17 @@ function HomeBoot() {
   return (
     <div className="flex h-dvh flex-col bg-background">
       <SiteHeader />
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-10">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-10"
+        aria-busy="true"
+        aria-label="Loading home"
+      >
         <Skeleton className="h-8 w-32 motion-reduce:animate-none" />
         <Skeleton className="h-12 w-full motion-reduce:animate-none" />
         <Skeleton className="h-48 w-full motion-reduce:animate-none" />
-      </div>
+      </main>
     </div>
   );
 }

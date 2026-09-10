@@ -90,7 +90,7 @@
   --secondary: oklch(0.24 0.016 var(--kiln-hue));
   --secondary-foreground: var(--bone);
   --muted: oklch(0.24 0.016 var(--kiln-hue));
-  --muted-foreground: oklch(0.72 0.04 var(--kiln-hue));
+  --muted-foreground: oklch(0.82 0.038 var(--kiln-hue));
   --accent: oklch(0.26 0.03 var(--kiln-hue));
   --accent-foreground: var(--bone);
   --destructive: oklch(0.68 0.15 28);
@@ -134,6 +134,24 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: 0.75rem;
+    top: 0.75rem;
+    z-index: 100;
+    padding: 0.5rem 0.9rem;
+    border-radius: var(--radius);
+    background: var(--kiln);
+    color: var(--kiln-foreground);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transform: translateY(-160%);
+  }
+
+  .skip-link:focus {
+    transform: none;
   }
 }
 

@@ -12,6 +12,9 @@ export function GET() {
 - [SDK](${absoluteUrl("/docs/sdk")})
 - [SQL](${absoluteUrl("/docs/sql")})
 - [Privacy](${absoluteUrl("/docs/privacy")})
+- [Terms](${absoluteUrl("/docs/terms")})
+- [Refunds](${absoluteUrl("/docs/refunds")})
+- [Cookies](${absoluteUrl("/docs/cookies")})
 - [AI Dev Skill](${absoluteUrl("/docs/skill")})
 
 ## Skill

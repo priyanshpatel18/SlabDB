@@ -19,6 +19,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { HOME_REPO, PROFILE_TABLE, USERS_TABLE, profilePath } from "@/lib/cluster";
@@ -180,7 +181,7 @@ export function HomeDashboard() {
           <ScrollArea className="min-h-0 flex-1 px-2 pb-3">{repoItems()}</ScrollArea>
         </aside>
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+        <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
             <div>
               <h1 className="text-2xl font-medium tracking-tight">Home</h1>
@@ -312,6 +313,7 @@ export function HomeDashboard() {
           <ChangelogList />
         </aside>
       </div>
+      <SiteFooter />
     </div>
   );
 }

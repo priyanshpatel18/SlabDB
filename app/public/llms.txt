@@ -13,7 +13,13 @@ Onchain GitHub. Profiles, repos, and README on a MagicBlock public Ephemeral Rol
 
 - [Home](/): product
 - [Console](/console): SQL workstation. Isolation is slab + wallet + ns.
+- [Docs](/docs): product docs
+- [Privacy Policy](/docs/privacy)
+- [Terms and Conditions](/docs/terms)
+- [Refund Policy](/docs/refunds)
+- [Cookie Policy](/docs/cookies)
 
 ## Do not confuse with
 
 Slab is not a hosted Postgres. Isolation is slab + wallet + namespace.
+Repos, profiles, and Irys pages are public.

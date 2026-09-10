@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { CliLogin } from "@/components/cli-login";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getSEOTags } from "@/lib/seo";
 
@@ -15,11 +16,12 @@ export default function CliLoginPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 py-12">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 py-12">
         <Suspense fallback={<p className="text-sm text-muted-foreground">Loading</p>}>
           <CliLogin />
         </Suspense>
       </main>
+      <SiteFooter />
     </div>
   );
 }

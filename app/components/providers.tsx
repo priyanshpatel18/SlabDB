@@ -8,6 +8,8 @@ import { ThemeProvider } from "next-themes";
 import { SlabWalletProvider } from "@/hooks/use-slab-wallet";
 import { AccountProvider } from "@/hooks/use-account";
 import { AgentGuideDialog } from "@/components/agent-guide-dialog";
+import { AnalyticsGate } from "@/components/analytics-gate";
+import { CookieBanner } from "@/components/cookie-banner";
 import { FundGate } from "@/components/fund-gate";
 import { OnboardingDialog } from "@/components/onboarding-dialog";
 import {
@@ -27,6 +29,8 @@ function Inner({ children }: { children: ReactNode }) {
             <OnboardingDialog />
           </FundGate>
           <AgentGuideDialog />
+          <AnalyticsGate />
+          <CookieBanner />
           <Toaster />
         </TooltipProvider>
       </AccountProvider>

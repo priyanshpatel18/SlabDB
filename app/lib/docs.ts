@@ -4,11 +4,54 @@ import { join } from "node:path";
 const docsDir = join(process.cwd(), "..", "docs");
 
 export const DOC_PAGES = [
-  { slug: "", title: "Overview", file: "README.md" },
-  { slug: "sdk", title: "SDK", file: "sdk.md" },
-  { slug: "sql", title: "SQL", file: "sql.md" },
-  { slug: "privacy", title: "Privacy", file: "privacy.md" },
-  { slug: "skill", title: "AI Dev Skill", file: "skill.md" },
+  {
+    slug: "",
+    title: "Overview",
+    file: "README.md",
+    description: "Slab docs. Catalog on a MagicBlock public ER. Pages on Irys.",
+  },
+  {
+    slug: "sdk",
+    title: "SDK",
+    file: "sdk.md",
+    description: "TypeScript client for Slab SQL on MagicBlock and Irys.",
+  },
+  {
+    slug: "sql",
+    title: "SQL",
+    file: "sql.md",
+    description: "v0 SQL statements Slab accepts.",
+  },
+  {
+    slug: "skill",
+    title: "AI Dev Skill",
+    file: "skill.md",
+    description: "Install the Slab skill for AI coding tools.",
+  },
+  {
+    slug: "privacy",
+    title: "Privacy",
+    file: "privacy.md",
+    description: "Privacy Policy for Slab. What is public on Irys and how sign-in works.",
+  },
+  {
+    slug: "terms",
+    title: "Terms",
+    file: "terms.md",
+    description: "Terms and Conditions for Slab and the CLI.",
+  },
+  {
+    slug: "refunds",
+    title: "Refunds",
+    file: "refunds.md",
+    description: "Refund Policy. Slab does not sell a paid product.",
+  },
+  {
+    slug: "cookies",
+    title: "Cookies",
+    file: "cookies.md",
+    description: "Cookie Policy. Necessary sign-in storage and optional analytics.",
+  },
 ] as const;
 
 export type DocSlug = (typeof DOC_PAGES)[number]["slug"];

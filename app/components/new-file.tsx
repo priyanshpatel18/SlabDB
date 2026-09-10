@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { RepoCrumb } from "@/components/repo-crumb";
 import { RepoHeader } from "@/components/repo-header";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useRepo } from "@/hooks/use-repo";
 import { assertFilePath, blobHref, repoHref, utf8Bytes } from "@/lib/files";
@@ -113,7 +114,7 @@ export function NewFile({
       {!access.loading && access.found ? (
         <RepoHeader uid={uid} repo={repo} pfp={access.profile?.pfp} own={access.own} />
       ) : null}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-4 sm:px-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-4 sm:px-6">
         <RepoCrumb uid={uid} repo={repo} />
         <div>
           <h1 className="text-2xl font-medium tracking-tight">Create a new file</h1>
@@ -235,6 +236,7 @@ export function NewFile({
           </form>
         ) : null}
       </main>
+      <SiteFooter />
     </div>
   );
 }

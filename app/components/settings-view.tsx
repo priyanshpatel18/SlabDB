@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RepoHeader } from "@/components/repo-header";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useRepo } from "@/hooks/use-repo";
 import { profilePath } from "@/lib/cluster";
@@ -119,7 +120,7 @@ export function SettingsView({ uid, repo }: { uid: string; repo: string }) {
           active="settings"
         />
       ) : null}
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-6 sm:px-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-6 sm:px-6">
         {access.error ? (
           <Alert variant="destructive" className="mb-6">
             <AlertTitle>Could not load repository</AlertTitle>
@@ -176,6 +177,7 @@ export function SettingsView({ uid, repo }: { uid: string; repo: string }) {
                     autoCapitalize="none"
                     spellCheck={false}
                     aria-invalid={Boolean(nameError)}
+                    aria-describedby={nameError ? "repo-rename-error" : undefined}
                     className="h-11 font-mono"
                     disabled={renaming || deleting}
                   />
@@ -190,7 +192,9 @@ export function SettingsView({ uid, repo }: { uid: string; repo: string }) {
                 </Button>
               </div>
               {nameError ? (
-                <p className="text-sm text-destructive">{nameError}</p>
+                <p id="repo-rename-error" className="text-sm text-destructive" role="alert">
+                  {nameError}
+                </p>
               ) : name.trim() && name.trim().toLowerCase() !== repo ? (
                 <p className="text-sm text-muted-foreground">
                   {uid}/{name.trim().toLowerCase()}
@@ -221,7 +225,9 @@ export function SettingsView({ uid, repo }: { uid: string; repo: string }) {
                   <input
                     type="radio"
                     name="visibility"
+                    value="private"
                     disabled
+                    aria-disabled="true"
                     className="mt-1 size-4"
                   />
                   <span>
@@ -273,6 +279,7 @@ export function SettingsView({ uid, repo }: { uid: string; repo: string }) {
           </div>
         ) : null}
       </main>
+      <SiteFooter />
     </div>
   );
 }

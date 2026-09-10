@@ -24,7 +24,7 @@ export function CommitBar({
         href={profilePath(uid)}
         className="shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Pfp id={pfp} alt="" size={20} className="size-5" />
+        <Pfp id={pfp} alt={commit?.author || uid} size={20} className="size-5" />
       </Link>
       <p className="min-w-0 flex-1 truncate text-sm">
         {commit ? (

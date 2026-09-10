@@ -119,9 +119,10 @@ export function CliLogin() {
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {token && error ? (
-        <label className="flex flex-col gap-2">
+        <label htmlFor="cli-token" className="flex flex-col gap-2">
           <span className="text-sm font-medium">Token</span>
           <textarea
+            id="cli-token"
             readOnly
             value={token}
             className="min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs"

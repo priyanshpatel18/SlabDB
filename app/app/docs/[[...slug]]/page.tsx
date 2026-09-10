@@ -26,7 +26,7 @@ export async function generateMetadata({
   const path = page.slug ? `/docs/${page.slug}` : "/docs";
   return getSEOTags({
     title: page.title,
-    description: "Slab docs. SDK, SQL, and the AI Dev Skill.",
+    description: page.description,
     canonicalUrlRelative: path,
     openGraph: { title: `${page.title} | Slab` },
   });

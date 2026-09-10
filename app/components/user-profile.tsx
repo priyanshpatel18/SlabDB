@@ -16,6 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileSidebar } from "@/components/profile-sidebar";
 import { ReadmeFile } from "@/components/readme-file";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useAccount } from "@/hooks/use-account";
 import { useUserCatalog } from "@/hooks/use-repo";
@@ -161,7 +162,7 @@ export function UserProfile({
       ) : null}
 
       {loading ? (
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:py-8">
           <div className="flex items-center gap-4 lg:w-72 lg:shrink-0 lg:flex-col lg:items-stretch">
             <Skeleton className="size-[72px] rounded-full motion-reduce:animate-none lg:size-64" />
             <div className="flex flex-col gap-2">
@@ -173,11 +174,11 @@ export function UserProfile({
             <Skeleton className="h-10 w-full motion-reduce:animate-none" />
             <Skeleton className="h-48 w-full motion-reduce:animate-none" />
           </div>
-        </div>
+        </main>
       ) : null}
 
       {!loading && !profile ? (
-        <div className="mx-auto w-full max-w-3xl px-4 py-10">
+        <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-3xl px-4 py-10">
           <Empty className="border border-dashed border-border py-12">
             <EmptyHeader>
               <EmptyTitle>Profile not found</EmptyTitle>
@@ -186,7 +187,7 @@ export function UserProfile({
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
-        </div>
+        </main>
       ) : null}
 
       {!loading && profile ? (
@@ -194,7 +195,7 @@ export function UserProfile({
           <aside className="w-full shrink-0 lg:w-80 lg:overflow-y-auto">
             <ProfileSidebar profile={profile} canEdit={own} />
           </aside>
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-8 pt-1 sm:px-6 lg:overflow-hidden lg:py-6">
+          <main id="main-content" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-8 pt-1 sm:px-6 lg:overflow-hidden lg:py-6">
             {readmeBusy ? (
               <div className="flex flex-col gap-3" aria-busy="true">
                 <Skeleton className="h-10 w-full motion-reduce:animate-none" />
@@ -299,6 +300,7 @@ export function UserProfile({
           </main>
         </div>
       ) : null}
+      <SiteFooter />
     </div>
   );
 }

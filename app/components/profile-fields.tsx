@@ -84,7 +84,7 @@ export function ProfileFields({
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-2">
-          <Label>Profile picture</Label>
+          <Label htmlFor="profile-pfp">Profile picture</Label>
           <p className="text-xs text-muted-foreground">
             Optional. Square crop, stored on Irys.
           </p>
@@ -97,22 +97,25 @@ export function ProfileFields({
               aria-hidden
             />
           ) : (
-            <Pfp id={draft.pfp} size={112} />
+            <Pfp id={draft.pfp} size={112} alt={draft.name || "Profile picture"} />
           )}
           <Button
             type="button"
             size="sm"
             className="absolute bottom-1 left-1 h-8"
+            aria-label="Change profile picture"
             onClick={() => fileRef.current?.click()}
           >
             <Pencil />
             Edit
           </Button>
           <input
+            id="profile-pfp"
             ref={fileRef}
             type="file"
             accept="image/*"
             className="sr-only"
+            aria-label="Upload profile picture"
             onChange={(e) => {
               const file = e.target.files?.[0] ?? null;
               onChange({ ...draft, pfpFile: file });
@@ -140,12 +143,19 @@ export function ProfileFields({
           onChange={(e) => onChange({ ...draft, uid: e.target.value })}
           className="h-11 font-mono"
           autoComplete="username"
+          aria-describedby={
+            uidHint
+              ? "profile-uid-hint profile-uid-error"
+              : "profile-uid-hint"
+          }
         />
-        <p className="text-xs text-muted-foreground">
+        <p id="profile-uid-hint" className="text-xs text-muted-foreground">
           Public URL. Start with a letter. Use a-z, 0-9, and _.
         </p>
         {uidHint ? (
-          <p className="text-xs text-destructive">{uidHint}</p>
+          <p id="profile-uid-error" className="text-xs text-destructive" role="alert">
+            {uidHint}
+          </p>
         ) : null}
       </div>
 
@@ -162,7 +172,7 @@ export function ProfileFields({
       {extra ? (
         <>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="profile-web">Website</Label>
+            <Label htmlFor="profile-web">Website (optional)</Label>
             <Input
               id="profile-web"
               value={draft.website}
@@ -175,17 +185,23 @@ export function ProfileFields({
           <div className="flex flex-col gap-2">
             <Label>Extra links</Label>
             {draft.links.map((link, i) => (
-              <Input
-                key={i}
-                value={link}
-                onChange={(e) => {
-                  const links = [...draft.links];
-                  links[i] = e.target.value;
-                  onChange({ ...draft, links });
-                }}
-                className="h-11"
-                placeholder={`Link ${i + 1}`}
-              />
+              <div key={i} className="flex flex-col gap-1">
+                <Label htmlFor={`profile-link-${i}`} className="sr-only">
+                  Extra link {i + 1}
+                </Label>
+                <Input
+                  id={`profile-link-${i}`}
+                  value={link}
+                  onChange={(e) => {
+                    const links = [...draft.links];
+                    links[i] = e.target.value;
+                    onChange({ ...draft, links });
+                  }}
+                  className="h-11"
+                  placeholder={`Link ${i + 1}`}
+                  autoComplete="url"
+                />
+              </div>
             ))}
           </div>
         </>

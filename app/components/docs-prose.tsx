@@ -3,6 +3,14 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "cn";
 
+function safeUrl(url: string): string {
+  const value = url.trim();
+  if (/^(javascript|vbscript|data):/i.test(value)) {
+    return "";
+  }
+  return url;
+}
+
 const tableComponents: Components = {
   table: ({ children }) => (
     <div className="mt-4 overflow-x-auto">
@@ -57,11 +65,25 @@ const docsComponents: Components = {
     </ol>
   ),
   li: ({ children }) => <li className="pl-1">{children}</li>,
-  a: ({ href, children }) => (
-    <a href={href} className="text-kiln underline-offset-4 hover:underline">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    const external = Boolean(
+      href && /^https?:\/\//i.test(href) && !href.includes("slab.priyanshpatel.com")
+    );
+    return (
+      <a
+        href={href}
+        className="text-kiln underline underline-offset-4 hover:underline"
+        {...(external
+          ? { rel: "noopener noreferrer", target: "_blank", referrerPolicy: "no-referrer" }
+          : {})}
+      >
+        {children}
+        {external ? (
+          <span className="sr-only"> (opens in a new tab)</span>
+        ) : null}
+      </a>
+    );
+  },
   code: ({ className, children }) => {
     const block = Boolean(className);
     if (block) {
@@ -85,6 +107,22 @@ const docsComponents: Components = {
       {children}
     </blockquote>
   ),
+  img: ({ src, alt }) => {
+    if (!src) {
+      return null;
+    }
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={alt ?? ""}
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        decoding="async"
+        className="mt-4 h-auto max-w-full"
+      />
+    );
+  },
 };
 
 const readmeComponents: Components = {
@@ -119,14 +157,23 @@ const readmeComponents: Components = {
   ),
   li: ({ children }) => <li className="pl-1">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="inline-block align-middle text-kiln underline-offset-4 hover:underline [&:has(img)]:text-transparent [&:has(img)]:no-underline"
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    const external = Boolean(href && /^https?:\/\//i.test(href));
+    return (
+      <a
+        href={href}
+        className="inline-block align-middle text-kiln underline-offset-4 hover:underline [&:has(img)]:text-transparent [&:has(img)]:no-underline"
+        {...(external
+          ? { rel: "noopener noreferrer", target: "_blank", referrerPolicy: "no-referrer" as const }
+          : {})}
+      >
+        {children}
+        {external ? (
+          <span className="sr-only"> (opens in a new tab)</span>
+        ) : null}
+      </a>
+    );
+  },
   img: ({ src, alt }) => {
     if (!src) {
       return null;
@@ -136,6 +183,9 @@ const readmeComponents: Components = {
       <img
         src={src}
         alt={alt ?? ""}
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        decoding="async"
         className="m-0 inline-block h-auto max-w-full align-middle"
       />
     );
@@ -163,6 +213,7 @@ export function DocsProse({
     >
       <Markdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={safeUrl}
         components={variant === "readme" ? readmeComponents : docsComponents}
       >
         {source}

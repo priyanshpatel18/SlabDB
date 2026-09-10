@@ -126,9 +126,11 @@ export function GoToFile({
           <DialogHeader className="border-b border-border px-3 py-2">
             <DialogTitle className="sr-only">Go to file</DialogTitle>
             <Input
+              id="go-to-file-query"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Go to file"
+              aria-label="Go to file"
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}

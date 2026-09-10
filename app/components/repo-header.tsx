@@ -25,7 +25,7 @@ export function RepoHeader({
     <div className="border-b border-border">
       <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 sm:pt-8">
         <div className="flex min-h-12 flex-wrap items-center gap-2 pb-4">
-          <Pfp id={pfp} alt="" size={24} className="size-6 rounded-full" />
+          <Pfp id={pfp} alt={uid} size={24} className="size-6 rounded-full" />
           <h1 className="flex min-w-0 flex-wrap items-center gap-1 text-xl font-normal leading-tight">
             <Link
               href={profilePath(uid)}

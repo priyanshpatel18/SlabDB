@@ -11,6 +11,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pfp } from "@/components/pfp";
 import { RepoHeader } from "@/components/repo-header";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useRepo } from "@/hooks/use-repo";
 import { commitHref } from "@/lib/files";
@@ -31,7 +32,7 @@ export function CommitsView({ uid, repo }: { uid: string; repo: string }) {
           own={access.own}
         />
       ) : null}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6">
         {access.error ? (
           <Alert variant="destructive" className="mb-6">
             <AlertTitle>Could not load commits</AlertTitle>
@@ -82,7 +83,7 @@ export function CommitsView({ uid, repo }: { uid: string; repo: string }) {
                               <p className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                                 <Pfp
                                   id={access.profile?.pfp}
-                                  alt=""
+                                  alt={commit.author || uid}
                                   size={20}
                                   className="size-5"
                                 />
@@ -123,6 +124,7 @@ export function CommitsView({ uid, repo }: { uid: string; repo: string }) {
           </Empty>
         ) : null}
       </main>
+      <SiteFooter />
     </div>
   );
 }

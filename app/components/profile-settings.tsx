@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { ProfileFields } from "@/components/profile-fields";
 import { useAccount } from "@/hooks/use-account";
@@ -45,7 +46,7 @@ export function ProfileSettings() {
   return (
     <div className="flex h-dvh flex-col bg-background">
       <SiteHeader />
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6">
           <div>
             <h1 className="text-2xl font-medium tracking-tight">
@@ -116,6 +117,7 @@ export function ProfileSettings() {
           </section>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

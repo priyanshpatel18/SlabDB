@@ -15,6 +15,7 @@ import { GoToFile } from "@/components/go-to-file";
 import { RepoCrumb } from "@/components/repo-crumb";
 import { RepoFile } from "@/components/repo-file";
 import { RepoHeader } from "@/components/repo-header";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useRepo } from "@/hooks/use-repo";
 import { findFile, repoHref } from "@/lib/files";
@@ -46,7 +47,7 @@ export function BlobView({
           own={access.own}
         />
       ) : null}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-4 sm:px-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-4 sm:px-6">
         {access.error ? (
           <Alert variant="destructive">
             <AlertTitle>Could not load file</AlertTitle>
@@ -114,6 +115,7 @@ export function BlobView({
           </div>
         ) : null}
       </main>
+      <SiteFooter />
     </div>
   );
 }

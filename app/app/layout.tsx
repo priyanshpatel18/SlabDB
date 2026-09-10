@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers";
+import { SkipLink } from "@/components/skip-link";
 import { getSEOTags } from "@/lib/seo";
 import { SEO_KEYWORDS } from "@/lib/site";
 import "./globals.css";
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="dark h-full font-sans antialiased" suppressHydrationWarning>
       <body className="flex min-h-full flex-col overflow-x-hidden bg-background font-sans text-foreground">
+        <SkipLink />
         <Providers>{children}</Providers>
       </body>
     </html>

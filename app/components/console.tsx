@@ -10,7 +10,9 @@ import { PublicKey } from "@solana/web3.js";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { BrandLockup } from "@/components/brand-lockup";
+import { SiteFooter } from "@/components/site-footer";
 import { WalletButton } from "@/components/wallet-button";
+import { openConsentBanner } from "@/hooks/use-consent";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -397,6 +399,9 @@ export function Console() {
             </ul>
           )}
         </ScrollArea>
+        <div className="hidden md:block">
+          <SiteFooter />
+        </div>
       </aside>
 
       <div className="relative flex min-w-0 w-full flex-1 flex-col overflow-x-hidden pt-[env(safe-area-inset-top)] md:pt-0">
@@ -422,11 +427,24 @@ export function Console() {
             >
               Docs
             </Link>
+            <Link
+              href="/docs/privacy"
+              className="text-sm text-muted-foreground hover:text-foreground md:hidden"
+            >
+              Privacy
+            </Link>
+            <button
+              type="button"
+              className="text-sm text-muted-foreground hover:text-foreground md:hidden"
+              onClick={() => openConsentBanner()}
+            >
+              Cookies
+            </button>
             <WalletButton />
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+          <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h1 className="text-2xl font-medium tracking-tight">
@@ -444,6 +462,7 @@ export function Console() {
                   variant="outline"
                   className="h-10 min-w-0 flex-1 sm:flex-none"
                   disabled={!connected || booting || busy}
+                  aria-label="Reload catalog"
                   onClick={reload}
                 >
                   <RefreshCw />
@@ -725,7 +744,7 @@ export function Console() {
               ) : null}
             </section>
             <div className="h-14" />
-          </div>
+          </main>
         </div>
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -740,6 +759,7 @@ export function Console() {
               variant="outline"
               size="sm"
               className="min-h-9 shrink-0"
+              aria-label="Copy status"
               onClick={() => {
                 void navigator.clipboard.writeText(previewLine).then(
                   () => toast.success("Copied"),
@@ -747,7 +767,7 @@ export function Console() {
                 );
               }}
             >
-              <Copy />
+              <Copy aria-hidden />
               <span className="hidden sm:inline">Copy</span>
             </Button>
           </div>

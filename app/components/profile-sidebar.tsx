@@ -16,11 +16,12 @@ function ProfileLink({ href }: { href: string }) {
       <a
         href={href}
         target="_blank"
-        rel="noreferrer"
+        rel="noopener noreferrer"
         className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-kiln hover:underline focus-visible:text-kiln sm:min-h-7"
       >
         <Link2 className="size-4 shrink-0" aria-hidden />
         <span className="truncate">{hrefLabel(href)}</span>
+        <span className="sr-only"> (opens in a new tab)</span>
       </a>
     </li>
   );

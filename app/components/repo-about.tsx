@@ -90,7 +90,7 @@ export function RepoAbout({
             aria-label="Edit repository details"
             onClick={startEdit}
           >
-            <IconGear />
+            <IconGear aria-hidden />
           </Button>
         ) : null}
       </div>
@@ -107,11 +107,13 @@ export function RepoAbout({
         <a
           href={website}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
+          referrerPolicy="no-referrer"
           className="mt-3 flex min-h-10 items-center gap-2 text-sm text-kiln hover:underline focus-visible:underline sm:min-h-7"
         >
-          <IconLink className="text-muted-foreground" />
+          <IconLink className="text-muted-foreground" aria-hidden />
           <span className="truncate">{websiteLabel(website)}</span>
+          <span className="sr-only"> (opens in a new tab)</span>
         </a>
       ) : null}
       {readmeHref ? (
@@ -119,7 +121,7 @@ export function RepoAbout({
           href={readmeHref}
           className="mt-3 flex min-h-10 items-center gap-2 border-t border-border pt-3 text-sm text-foreground hover:text-kiln hover:underline focus-visible:text-kiln sm:min-h-7"
         >
-          <IconBook className="text-muted-foreground" />
+          <IconBook className="text-muted-foreground" aria-hidden />
           Readme
         </a>
       ) : null}

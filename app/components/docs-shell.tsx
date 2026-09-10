@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { DOC_PAGES, docHref } from "@/lib/docs";
 import { cn } from "cn";
@@ -20,7 +21,7 @@ export function DocsShell({
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
             Docs
           </p>
-          <nav className="mt-3 flex flex-row gap-2 lg:flex-col lg:gap-0.5">
+          <nav aria-label="Documentation" className="mt-3 flex flex-row flex-wrap gap-2 lg:flex-col lg:gap-0.5">
             {DOC_PAGES.map((page) => {
               const href = docHref(page.slug);
               const active = page.slug === slug;
@@ -43,16 +44,10 @@ export function DocsShell({
           </nav>
         </aside>
         <div className="slab-scroll-quiet min-h-0 min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-0 lg:py-12">
-          {children}
-          <p className="mt-16 pb-16 text-xs text-muted-foreground">
-            Powered by{" "}
-            <a
-              href="https://www.gitbook.com"
-              className="text-kiln underline-offset-4 hover:underline"
-            >
-              GitBook
-            </a>
-          </p>
+          <main id="main-content" tabIndex={-1}>
+            {children}
+          </main>
+          <SiteFooter />
         </div>
       </div>
     </div>

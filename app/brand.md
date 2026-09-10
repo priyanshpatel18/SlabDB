@@ -18,7 +18,7 @@ Hue **48** (logo copper) for ink, surfaces, and the only accent. Hue **70** (wor
 | `--background` | kiln 0.175 | Page |
 | `--foreground` / `--bone` | cream 0.936 / 0.038 / 70 (`#fae6cf`) | Text |
 | `--primary` / `--kiln` | copper 0.734 / 0.129 / 48 (`#e89058`) | Actions, ER live |
-| `--muted-foreground` | 0.72 | Labels |
+| `--muted-foreground` | 0.82 | Labels |
 | `--destructive` | brick 28° | Errors only |
 | `--spotlight` / `--beam-*` | copper, low chroma | Aceternity, no cyan/violet |
 

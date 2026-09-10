@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PublicDataConsent } from "@/components/public-data-consent";
 import { useAccount } from "@/hooks/use-account";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { shortAddr } from "@/lib/cluster";
@@ -33,6 +35,7 @@ export function NewRepo() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [addReadme, setAddReadme] = useState(true);
+  const [agreed, setAgreed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -67,7 +70,8 @@ export function NewRepo() {
     !account.busy &&
     !saving &&
     !nameError &&
-    Boolean(name.trim());
+    Boolean(name.trim()) &&
+    agreed;
 
   function onCreate() {
     if (!home || !wallet.address || !canCreate) {
@@ -97,7 +101,7 @@ export function NewRepo() {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-8 sm:px-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-8 sm:px-6">
         <h1 className="text-2xl font-medium tracking-tight">
           Create a new repository
         </h1>
@@ -199,12 +203,15 @@ export function NewRepo() {
                   autoCapitalize="none"
                   spellCheck={false}
                   aria-invalid={Boolean(nameError)}
+                  aria-describedby={nameError ? "new-repo-name-error" : undefined}
                   className="h-11 font-mono"
                 />
               </div>
             </div>
             {nameError ? (
-              <p className="text-sm text-destructive">{nameError}</p>
+              <p id="new-repo-name-error" className="text-sm text-destructive" role="alert">
+                {nameError}
+              </p>
             ) : name.trim() ? (
               <p className="text-sm text-muted-foreground">
                 {owner}/{name.trim().toLowerCase()}
@@ -250,7 +257,9 @@ export function NewRepo() {
                 <input
                   type="radio"
                   name="visibility"
+                  value="private"
                   disabled
+                  aria-disabled="true"
                   className="mt-1 size-4"
                 />
                 <span>
@@ -262,8 +271,9 @@ export function NewRepo() {
               </label>
             </fieldset>
 
-            <label className="flex min-h-10 items-start gap-3">
+            <label htmlFor="new-repo-readme" className="flex min-h-10 items-start gap-3">
               <input
+                id="new-repo-readme"
                 type="checkbox"
                 checked={addReadme}
                 onChange={(event) => setAddReadme(event.target.checked)}
@@ -278,6 +288,12 @@ export function NewRepo() {
               </span>
               </span>
             </label>
+
+            <PublicDataConsent
+              id="new-repo-public"
+              checked={agreed}
+              onChange={setAgreed}
+            />
 
             {status ? (
               <p className="text-sm text-muted-foreground">{status}</p>
@@ -304,6 +320,7 @@ export function NewRepo() {
           </form>
         ) : null}
       </main>
+      <SiteFooter />
     </div>
   );
 }

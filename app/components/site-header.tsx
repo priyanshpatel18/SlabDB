@@ -9,22 +9,22 @@ export function SiteHeader() {
         <Link href="/" aria-label="Slab" className="shrink-0">
           <BrandLockup priority />
         </Link>
-        <nav className="flex min-w-0 items-center gap-3 sm:gap-4">
+        <nav aria-label="Site" className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link
             href="/new"
-            className="shrink-0 text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex min-h-10 shrink-0 items-center text-sm text-muted-foreground hover:text-foreground focus-visible:text-foreground sm:min-h-7"
           >
             New
           </Link>
           <Link
             href="/docs"
-            className="shrink-0 text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex min-h-10 shrink-0 items-center text-sm text-muted-foreground hover:text-foreground focus-visible:text-foreground sm:min-h-7"
           >
             Docs
           </Link>
           <Link
             href="/console"
-            className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:inline"
+            className="hidden min-h-10 shrink-0 items-center text-sm text-muted-foreground hover:text-foreground focus-visible:text-foreground sm:inline-flex sm:min-h-7"
           >
             Console
           </Link>

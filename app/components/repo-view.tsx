@@ -15,6 +15,7 @@ import { RepoAbout } from "@/components/repo-about";
 import { RepoCrumb } from "@/components/repo-crumb";
 import { RepoFile } from "@/components/repo-file";
 import { RepoHeader } from "@/components/repo-header";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useRepo } from "@/hooks/use-repo";
 import {
@@ -52,7 +53,7 @@ export function RepoView({
           own={access.own}
         />
       ) : null}
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-4 sm:px-6">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-4 sm:px-6">
         {access.error ? (
           <Alert variant="destructive" className="mb-6">
             <AlertTitle>Could not load repository</AlertTitle>
@@ -197,6 +198,7 @@ export function RepoView({
           )
         ) : null}
       </main>
+      <SiteFooter />
     </div>
   );
 }

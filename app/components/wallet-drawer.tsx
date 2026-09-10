@@ -46,11 +46,11 @@ export function WalletDrawer() {
           className="inline-flex size-8 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           aria-label="Account menu"
         >
-          <Pfp id={profile?.pfp} size={32} />
+          <Pfp id={profile?.pfp} size={32} alt="" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-56 w-64 p-1">
           <div className="flex items-center gap-2 px-2 py-2">
-            <Pfp id={profile?.pfp} size={32} />
+            <Pfp id={profile?.pfp} size={32} alt={profile?.name || profile?.uid || "Profile"} />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">
                 {profile?.name || shortAddr(address)}
