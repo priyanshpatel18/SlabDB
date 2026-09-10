@@ -11,6 +11,6 @@ Options:
   --keypair <path>   Solana keypair JSON. Default ANCHOR_WALLET or ~/.config/solana/id.json
   -h, --help         Show this help
 
-init creates .slab in this directory. clone copies a public profile repo to disk.
-add stages files. commit snapshots the index. push writes the commit to Slab.
+init creates .slab in this directory. clone copies a public repo to disk.
+push writes changed files and a commit to Slab.
 `;

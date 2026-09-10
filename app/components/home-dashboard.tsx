@@ -1,25 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Pfp } from "@/components/pfp";
 import { ChangelogList } from "@/components/changelog-list";
 import { useAccount } from "@/hooks/use-account";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Empty,
   EmptyContent,
@@ -30,48 +21,27 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SiteHeader } from "@/components/site-header";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
-import type { SlabSigner } from "@/lib/wallet";
 import { HOME_REPO, PROFILE_TABLE, USERS_TABLE, profilePath } from "@/lib/cluster";
+import { repoHref } from "@/lib/files";
 import { privyConfigured } from "@/lib/privy-config";
-import { createRepo } from "@/lib/home";
-
-function asSigner(
-  wallet: ReturnType<typeof useSlabWallet>
-): SlabSigner | null {
-  if (!wallet.publicKey || !wallet.connected) {
-    return null;
-  }
-  return {
-    publicKey: wallet.publicKey,
-    signTransaction: wallet.signTransaction,
-    signAllTransactions: wallet.signAllTransactions,
-    signMessage: wallet.signMessage,
-  };
-}
 
 export function HomeDashboard() {
   const wallet = useSlabWallet();
-  const signer = useMemo(() => asSigner(wallet), [wallet]);
-  const signerId = signer?.publicKey.toBase58() ?? "";
+  const signerId = wallet.publicKey?.toBase58() ?? "";
   const account = useAccount();
   const home = account.home;
-  const setHome = account.setHome;
   const error = account.error;
   const boot = account.retry;
 
   const [query, setQuery] = useState("");
-  const [localBusy, setLocalBusy] = useState(false);
-  const [newOpen, setNewOpen] = useState(false);
-  const [newName, setNewName] = useState("");
   const [boundId, setBoundId] = useState(signerId);
 
   if (signerId !== boundId) {
     setBoundId(signerId);
     setQuery("");
-    setLocalBusy(false);
   }
 
-  const busy = account.busy || localBusy;
+  const busy = account.busy;
   const uid = account.profile?.uid ?? "";
   const profileHref = uid ? profilePath(uid) : "/settings";
 
@@ -94,28 +64,6 @@ export function HomeDashboard() {
     return userRepos.filter((rel) => rel.name.includes(q));
   }, [userRepos, query]);
 
-  const onCreate = useCallback(() => {
-    if (!home || !signer) {
-      return;
-    }
-    setLocalBusy(true);
-    void createRepo(home.session, newName, signer.publicKey.toBase58(), () => {})
-      .then((next) => {
-        setHome(next);
-        setNewOpen(false);
-        setNewName("");
-        toast.success(`Created ${next.active}`);
-      })
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : "Could not create repo";
-        toast.error(msg);
-      })
-      .finally(() => {
-        setLocalBusy(false);
-      });
-  }, [home, newName, setHome, signer]);
-
-  const canRun = Boolean(home) && !busy;
   const signedOut = !wallet.connected;
 
   function repoItems() {
@@ -132,21 +80,38 @@ export function HomeDashboard() {
     }
     return (
       <ul className="flex flex-col gap-0.5">
-        {filtered.map((rel) => (
-          <li key={rel.oid}>
-            <div className="flex min-h-11 items-center gap-3 rounded-md px-2 py-2">
-              <BookOpen className="size-3.5 shrink-0 text-kiln" aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">
-                  {uid ? `${uid}/${rel.name}` : rel.name}
+        {filtered.map((rel) => {
+            const href = uid ? repoHref(uid, rel.name) : "";
+            const inner = (
+              <>
+                <BookOpen className="size-3.5 shrink-0 text-kiln" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {uid ? `${uid}/${rel.name}` : rel.name}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {rel.nTuples} {rel.nTuples === 1 ? "file" : "files"}
+                  </span>
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {rel.nTuples} {rel.nTuples === 1 ? "file" : "files"}
-                </span>
-              </span>
-            </div>
-          </li>
-        ))}
+              </>
+            );
+            return (
+              <li key={rel.oid}>
+                {href ? (
+                  <Link
+                    href={href}
+                    className="flex min-h-11 items-center gap-3 rounded-md px-2 py-2 hover:bg-sidebar-accent/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className="flex min-h-11 items-center gap-3 rounded-md px-2 py-2">
+                    {inner}
+                  </div>
+                )}
+              </li>
+            );
+          })}
       </ul>
     );
   }
@@ -204,8 +169,8 @@ export function HomeDashboard() {
               type="button"
               size="sm"
               className="min-h-10 lg:min-h-7"
-              disabled={!canRun}
-              onClick={() => setNewOpen(true)}
+              nativeButton={false}
+              render={<Link href="/new" />}
             >
               <Plus />
               New
@@ -257,8 +222,8 @@ export function HomeDashboard() {
                     type="button"
                     size="sm"
                     className="min-h-10"
-                    disabled={!canRun}
-                    onClick={() => setNewOpen(true)}
+                    nativeButton={false}
+                    render={<Link href="/new" />}
                   >
                     <Plus />
                     New
@@ -347,54 +312,6 @@ export function HomeDashboard() {
           <ChangelogList />
         </aside>
       </div>
-
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New repo</DialogTitle>
-            <DialogDescription>
-              Creates a table in your home catalog and writes README.md.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="new-repo-name">Name</Label>
-            <Input
-              id="new-repo-name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="notes"
-              autoComplete="off"
-              className="h-11 font-mono"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  if (canRun && newName.trim()) {
-                    onCreate();
-                  }
-                }
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 sm:h-8"
-              onClick={() => setNewOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              className="h-11 sm:h-8"
-              disabled={!canRun || !newName.trim()}
-              onClick={onCreate}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

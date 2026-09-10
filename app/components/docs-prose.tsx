@@ -1,8 +1,35 @@
 import type { Components } from "react-markdown";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn } from "cn";
 
+const tableComponents: Components = {
+  table: ({ children }) => (
+    <div className="mt-4 overflow-x-auto">
+      <table className="w-full min-w-[28rem] border-collapse text-[0.95rem] leading-relaxed">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }) => (
+    <thead className="border-b border-border">{children}</thead>
+  ),
+  tbody: ({ children }) => <tbody>{children}</tbody>,
+  tr: ({ children }) => (
+    <tr className="border-b border-border last:border-0">{children}</tr>
+  ),
+  th: ({ children }) => (
+    <th className="py-2 pr-4 text-left align-top font-medium text-foreground">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="py-2 pr-4 align-top text-muted-foreground">{children}</td>
+  ),
+};
+
 const docsComponents: Components = {
+  ...tableComponents,
   h1: ({ children }) => (
     <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
       {children}
@@ -53,9 +80,15 @@ const docsComponents: Components = {
       {children}
     </pre>
   ),
+  blockquote: ({ children }) => (
+    <blockquote className="mt-4 border-l-2 border-border pl-4 text-[0.95rem] leading-relaxed text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
 };
 
 const readmeComponents: Components = {
+  ...tableComponents,
   h1: ({ children }) => (
     <h1 className="mb-4 border-b border-border pb-2 text-[2em] leading-tight font-semibold">
       {children}
@@ -129,6 +162,7 @@ export function DocsProse({
       )}
     >
       <Markdown
+        remarkPlugins={[remarkGfm]}
         components={variant === "readme" ? readmeComponents : docsComponents}
       >
         {source}

@@ -2,7 +2,7 @@
 
 import { Buffer } from "buffer";
 import { fundIrys, type StatusFn } from "slabdb/web";
-import { IRYS_RPC_URL } from "@/lib/cluster";
+import { IRYS_RPC_URL, isReservedUsername } from "@/lib/cluster";
 import {
   localWalletForUid,
   readPublicCache,
@@ -30,7 +30,7 @@ export async function lookupUsername(
   raw: string
 ): Promise<CachedPublicProfile | null> {
   const uid = raw.trim().toLowerCase();
-  if (!isUsernameFormat(uid)) {
+  if (!isUsernameFormat(uid) || isReservedUsername(uid)) {
     return null;
   }
   const cached = readPublicCache(uid);
@@ -71,6 +71,9 @@ export async function assertUsernameFree(
   uid: string,
   wallet: string
 ): Promise<void> {
+  if (isReservedUsername(uid)) {
+    throw new Error("That username is reserved");
+  }
   const local = localWalletForUid(uid);
   if (local && local !== wallet) {
     throw new Error("Username is taken");

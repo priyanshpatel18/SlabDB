@@ -41,11 +41,25 @@ function writeJson(path: string, value: unknown) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+export function sqlTable(name: string): string {
+  if (/^[a-z_][a-z0-9_]*$/.test(name)) {
+    return name;
+  }
+  if (!name || /["\\\s]/.test(name)) {
+    throw new Error("Invalid table name");
+  }
+  return `"${name}"`;
+}
+
 export function assertRepoName(raw: string): string {
   const name = raw.trim().toLowerCase();
-  if (!/^[a-z][a-z0-9_]{0,31}$/.test(name)) {
+  if (
+    !/^[a-z][a-z0-9_-]{0,31}$/.test(name) ||
+    name.endsWith("-") ||
+    name.includes("--")
+  ) {
     throw new Error(
-      "Repo name must start with a letter and use only a-z, 0-9, and _"
+      "Repo name must start with a letter and use a-z, 0-9, -, and _"
     );
   }
   if (name === "profile" || name === "users") {

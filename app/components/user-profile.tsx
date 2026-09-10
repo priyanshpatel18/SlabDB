@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileSidebar } from "@/components/profile-sidebar";
 import { ReadmeFile } from "@/components/readme-file";
 import { SiteHeader } from "@/components/site-header";
 import { useAccount } from "@/hooks/use-account";
+import { useUserCatalog } from "@/hooks/use-repo";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { HOME_REPO } from "@/lib/cluster";
+import { repoHref } from "@/lib/files";
 import { loadRepoReadme } from "@/lib/home";
 import {
   readPublicCache,
@@ -36,6 +42,7 @@ export function UserProfile({
 }) {
   const wallet = useSlabWallet();
   const account = useAccount();
+  const catalog = useUserCatalog(uid);
   const home = account.home;
   const [remote, setRemote] = useState<CachedPublicProfile | null>(() => {
     if (initial?.uid === uid) {
@@ -187,32 +194,108 @@ export function UserProfile({
           <aside className="w-full shrink-0 lg:w-80 lg:overflow-y-auto">
             <ProfileSidebar profile={profile} canEdit={own} />
           </aside>
-          <main className="flex min-w-0 flex-1 flex-col px-4 pb-8 pt-1 sm:px-6 lg:min-h-0 lg:overflow-hidden lg:py-6">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-8 pt-1 sm:px-6 lg:overflow-hidden lg:py-6">
             {readmeBusy ? (
               <div className="flex flex-col gap-3" aria-busy="true">
                 <Skeleton className="h-10 w-full motion-reduce:animate-none" />
                 <Skeleton className="h-48 w-full motion-reduce:animate-none" />
               </div>
-            ) : null}
-            {!readmeBusy && !readme && !own ? (
-              <Empty className="border border-dashed border-border py-10">
-                <EmptyHeader>
-                  <EmptyTitle>No README.md</EmptyTitle>
-                  <EmptyDescription>
-                    This profile has no README.md yet.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : null}
-            {!readmeBusy && (readme || own) ? (
-              <ReadmeFile
-                uid={uid}
-                source={readme}
-                canEdit={own && Boolean(home)}
-                status={account.status}
-                onCommit={account.commitReadme}
-              />
-            ) : null}
+            ) : (
+              <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col lg:overflow-hidden">
+                <TabsList variant="line" className="w-full shrink-0 justify-start">
+                  <TabsTrigger value="overview" className="min-h-10 px-3">
+                    Overview
+                  </TabsTrigger>
+                  <TabsTrigger value="repos" className="min-h-10 px-3">
+                    Repositories
+                    {catalog.repos.length
+                      ? ` ${catalog.repos.length}`
+                      : ""}
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent
+                  value="overview"
+                  className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                >
+                  {!readme && !own ? (
+                    <Empty className="border border-dashed border-border py-10">
+                      <EmptyHeader>
+                        <EmptyTitle>No README.md</EmptyTitle>
+                        <EmptyDescription>
+                          This profile has no README.md yet.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  ) : null}
+                  {readme || own ? (
+                    <ReadmeFile
+                      uid={uid}
+                      source={readme}
+                      canEdit={own && Boolean(home)}
+                      status={account.status}
+                      onCommit={account.commitReadme}
+                    />
+                  ) : null}
+                </TabsContent>
+                <TabsContent
+                  value="repos"
+                  className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                >
+                  {catalog.loading ? (
+                    <div className="flex flex-col gap-2" aria-busy="true">
+                      <Skeleton className="h-12 w-full motion-reduce:animate-none" />
+                      <Skeleton className="h-12 w-full motion-reduce:animate-none" />
+                    </div>
+                  ) : null}
+                  {!catalog.loading && catalog.repos.length === 0 ? (
+                    <Empty className="border border-dashed border-border py-10">
+                      <EmptyHeader>
+                        <EmptyTitle>No repositories</EmptyTitle>
+                        <EmptyDescription>
+                          {own
+                            ? "Create a repository to hold files in folders."
+                            : "This user has no public repositories yet."}
+                        </EmptyDescription>
+                      </EmptyHeader>
+                      {own ? (
+                        <EmptyContent>
+                          <Button
+                            type="button"
+                            className="h-11"
+                            nativeButton={false}
+                            render={<Link href="/new" />}
+                          >
+                            New repository
+                          </Button>
+                        </EmptyContent>
+                      ) : null}
+                    </Empty>
+                  ) : null}
+                  {!catalog.loading && catalog.repos.length > 0 ? (
+                    <ul className="flex flex-col gap-2">
+                      {catalog.repos.map((rel) => (
+                        <li key={rel.oid}>
+                          <Link
+                            href={repoHref(uid, rel.name)}
+                            className="flex min-h-12 items-center gap-3 rounded-lg border border-border bg-card px-3 py-3 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                          >
+                            <BookOpen className="size-4 shrink-0 text-kiln" aria-hidden />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-kiln">
+                                {uid}/{rel.name}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {rel.nTuples} {rel.nTuples === 1 ? "file" : "files"}
+                              </span>
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </TabsContent>
+              </Tabs>
+            )}
           </main>
         </div>
       ) : null}

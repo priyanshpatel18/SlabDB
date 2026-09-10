@@ -43,6 +43,7 @@ import { fundIrys } from "@/lib/irys-store";
 import { parseSql, splitStatements } from "@/lib/sql";
 import { PAGE_BYTES, type SqlParam, type SqlValue } from "@/lib/sql-types";
 import { NS_LABEL, shortAddr } from "@/lib/cluster";
+import { sqlTable } from "@/lib/files";
 
 function parseBindParams(text: string): SqlParam[] | undefined {
   const raw = text.trim();
@@ -97,10 +98,10 @@ function tableFromSql(sql: string): string | null {
       continue;
     }
   }
-  const named = /\b(?:from|into|update|table)\s+"?([a-z_][a-z0-9_]*)"?/i.exec(
+  const named = /\b(?:from|into|update|table)\s+(?:"([^"]+)"|([a-z_][a-z0-9_]*))/i.exec(
     sql
   );
-  return named?.[1]?.toLowerCase() ?? null;
+  return (named?.[1] ?? named?.[2])?.toLowerCase() ?? null;
 }
 
 export function Console() {
@@ -299,7 +300,7 @@ export function Console() {
 
   const inspect = useCallback(
     (name: string) => {
-      runSql(`SELECT * FROM ${name};`);
+      runSql(`SELECT * FROM ${sqlTable(name)};`);
     },
     [runSql],
   );

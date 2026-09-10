@@ -37,8 +37,14 @@ export function parseRemote(raw: string): RemoteSpec {
   if (value.split("/").length > 2) {
     throw new Error("Clone target must be uid or uid/repo");
   }
-  if (repo && !/^[a-z][a-z0-9_]{0,31}$/.test(repo)) {
-    throw new Error("Repo name must start with a letter and use only a-z, 0-9, and _");
+  if (repo && (
+    !/^[a-z][a-z0-9_-]{0,31}$/.test(repo) ||
+    repo.endsWith("-") ||
+    repo.includes("--")
+  )) {
+    throw new Error(
+      "Repo name must start with a letter and use a-z, 0-9, -, and _"
+    );
   }
   return { uid, repo: repo || "home" };
 }

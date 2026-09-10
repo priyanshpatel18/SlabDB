@@ -11,6 +11,12 @@ export function SiteHeader() {
         </Link>
         <nav className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link
+            href="/new"
+            className="shrink-0 text-sm text-muted-foreground hover:text-foreground"
+          >
+            New
+          </Link>
+          <Link
             href="/docs"
             className="shrink-0 text-sm text-muted-foreground hover:text-foreground"
           >

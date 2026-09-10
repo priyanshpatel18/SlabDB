@@ -1,7 +1,7 @@
 export const site = {
   appName: "Slab",
   appDescription:
-    "Onchain GitHub. Profiles, repos, and README on MagicBlock and Irys.",
+    "Onchain GitHub. Profiles, repos, and files on MagicBlock and Irys.",
   domainName: "localhost:3000",
 } as const;
 
@@ -14,5 +14,6 @@ export const SEO_KEYWORDS = [
   "Irys",
   "Solana",
   "onchain profile",
+  "repository",
   "README",
 ] as const;

@@ -26,6 +26,7 @@ export const RESERVED_USERNAMES = [
   "docs",
   "console",
   "settings",
+  "new",
   "api",
   "users",
   "home",
@@ -50,6 +51,10 @@ export function isReservedUsername(uid: string): boolean {
 
 export function profilePath(uid: string): string {
   return `/${encodeURIComponent(uid)}`;
+}
+
+export function repoPath(uid: string, repo: string): string {
+  return `/${encodeURIComponent(uid)}/${encodeURIComponent(repo)}`;
 }
 
 export function explorerTxUrl(signature: string) {

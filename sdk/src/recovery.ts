@@ -8,8 +8,18 @@ export function isLegacyLocalPageId(id: string): boolean {
   return LEGACY_LOCAL_PAGE_RE.test(id);
 }
 
+function quoteIdent(name: string): string {
+  if (/^[a-z_][a-z0-9_]*$/.test(name)) {
+    return name;
+  }
+  if (!name || /["\\\s]/.test(name)) {
+    throw new Error("Invalid identifier");
+  }
+  return `"${name}"`;
+}
+
 export function dropTableSql(name: string): string {
-  return `DROP TABLE ${name}`;
+  return `DROP TABLE ${quoteIdent(name)}`;
 }
 
 function sqlType(typ: Column["typ"]): string {
@@ -22,7 +32,7 @@ export function createTableSql(rel: RelInfo): string {
     const nn = c.notNull && i !== rel.pkAttr ? " NOT NULL" : "";
     return `${c.name} ${sqlType(c.typ)}${pk}${nn}`;
   });
-  return `CREATE TABLE ${rel.name} (${cols.join(", ")})`;
+  return `CREATE TABLE ${quoteIdent(rel.name)} (${cols.join(", ")})`;
 }
 
 export class UnreadablePageError extends Error {

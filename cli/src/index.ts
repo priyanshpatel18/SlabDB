@@ -37,6 +37,7 @@ const SKIP = new Set([
   "target",
   ".DS_Store",
   ".env",
+  ".history",
 ]);
 
 function fail(err: unknown): never {
@@ -112,9 +113,10 @@ function collectFiles(root: string, target: string): StagedFile[] {
 function defaultRepoName(dir: string): string {
   const base = basename(resolve(dir))
     .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  if (/^[a-z][a-z0-9_]{0,31}$/.test(base)) {
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (/^[a-z][a-z0-9_-]{0,31}$/.test(base) && !base.endsWith("-") && !base.includes("--")) {
     return base;
   }
   return "home";
@@ -247,13 +249,18 @@ async function cmdPush(keypair?: string) {
     { autoDelegate: true }
   );
   await ensureRepo(client, config.repo);
-  await upsertFiles(client, config.repo, commit.files);
+  const wrote = await upsertFiles(client, config.repo, commit.files, {
+    message: commit.message,
+    author: config.uid || wallet.publicKey.toBase58(),
+  });
   saveConfig(root, {
     ...config,
     owner: config.owner || wallet.publicKey.toBase58(),
     pushed: hash,
   });
-  process.stdout.write(`Pushed ${commit.files.length} file${commit.files.length === 1 ? "" : "s"} to ${config.repo}\n`);
+  process.stdout.write(
+    `Pushed ${wrote} file${wrote === 1 ? "" : "s"} to ${config.repo}\n`
+  );
 }
 
 async function main() {

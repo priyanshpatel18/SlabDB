@@ -1,4 +1,4 @@
-import { IRYS_GATEWAY } from "@/lib/cluster";
+import { IRYS_GATEWAY, isReservedUsername } from "@/lib/cluster";
 
 export const USERNAME_APP = "Slab";
 export const USERNAME_FILE = "username";
@@ -148,7 +148,7 @@ export async function lookupUsernameRemote(
   raw: string
 ): Promise<PublicProfile | null> {
   const uid = normalizeUsername(raw);
-  if (!isUsernameFormat(uid)) {
+  if (!isUsernameFormat(uid) || isReservedUsername(uid)) {
     return null;
   }
   const nodes = await graphql(uid);
