@@ -10,25 +10,40 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { DocsProse } from "@/components/docs-prose";
 import { ProfileSidebar } from "@/components/profile-sidebar";
+import { ReadmeFile } from "@/components/readme-file";
 import { SiteHeader } from "@/components/site-header";
 import { useAccount } from "@/hooks/use-account";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
-import { HOME_REPO, README_PATH } from "@/lib/cluster";
+import { HOME_REPO } from "@/lib/cluster";
 import { loadRepoReadme } from "@/lib/home";
-import { readPublicCache, type CachedPublicProfile } from "@/lib/profile-cache";
+import {
+  readPublicCache,
+  readReadmeCache,
+  writePublicCache,
+  writeReadmeCache,
+  type CachedPublicProfile,
+} from "@/lib/profile-cache";
 import { lookupUsername } from "@/lib/username";
 import { toast } from "sonner";
 
-export function UserProfile({ uid }: { uid: string }) {
+export function UserProfile({
+  uid,
+  initial = null,
+}: {
+  uid: string;
+  initial?: CachedPublicProfile | null;
+}) {
   const wallet = useSlabWallet();
   const account = useAccount();
   const home = account.home;
-  const [remote, setRemote] = useState<CachedPublicProfile | null>(() =>
-    readPublicCache(uid)
-  );
-  const [lookupDone, setLookupDone] = useState(false);
+  const [remote, setRemote] = useState<CachedPublicProfile | null>(() => {
+    if (initial?.uid === uid) {
+      return initial;
+    }
+    return readPublicCache(uid) ?? initial;
+  });
+  const [lookupDone, setLookupDone] = useState(() => initial?.uid === uid);
   const [fetched, setFetched] = useState<{ key: string; body: string } | null>(
     null
   );
@@ -42,11 +57,23 @@ export function UserProfile({ uid }: { uid: string }) {
     own && home && home.active !== HOME_REPO ? home.session.slab : "";
 
   useEffect(() => {
+    if (initial?.uid === uid) {
+      writePublicCache(initial);
+      if (initial.readme) {
+        writeReadmeCache(uid, initial.readme, initial.wallet);
+      }
+    }
+  }, [initial, uid]);
+
+  useEffect(() => {
     let cancelled = false;
     void lookupUsername(uid)
       .then((row) => {
         if (!cancelled) {
-          setRemote(row);
+          setRemote((prev) => row ?? prev);
+          if (row?.readme) {
+            writeReadmeCache(uid, row.readme, row.wallet);
+          }
         }
       })
       .finally(() => {
@@ -68,6 +95,10 @@ export function UserProfile({ uid }: { uid: string }) {
       .then((body) => {
         if (!cancelled) {
           setFetched({ key: fetchKey, body });
+          const ownerUid = account.profile?.uid;
+          if (ownerUid) {
+            writeReadmeCache(ownerUid, body, wallet.address ?? "");
+          }
         }
       })
       .catch((err) => {
@@ -80,22 +111,24 @@ export function UserProfile({ uid }: { uid: string }) {
     return () => {
       cancelled = true;
     };
-  }, [fetchKey, home]);
+  }, [account.profile?.uid, fetchKey, home, wallet.address]);
 
-  const readme =
+  const cachedReadme = readReadmeCache(uid);
+  const liveReadme =
     own && home && home.active === HOME_REPO
       ? home.readme
       : fetchKey && fetched?.key === fetchKey
         ? fetched.body
-        : (remote?.readme ?? "");
-  const readmeBusy = Boolean(fetchKey && fetched?.key !== fetchKey);
+        : "";
+  const readme = liveReadme || remote?.readme || cachedReadme;
+  const readmeBusy = Boolean(!readme && fetchKey && fetched?.key !== fetchKey);
   const loading =
     !profile &&
     ((wallet.connected && !account.error && !home && account.busy) ||
       !lookupDone);
 
   return (
-    <div className="flex h-dvh max-w-[100vw] min-h-dvh flex-col overflow-x-hidden bg-background">
+    <div className="flex h-dvh max-w-[100vw] min-h-dvh flex-col overflow-hidden bg-background">
       <SiteHeader />
       {account.error && own ? (
         <div className="mx-auto w-full max-w-3xl px-4 py-8">
@@ -144,18 +177,18 @@ export function UserProfile({ uid }: { uid: string }) {
       ) : null}
 
       {!loading && profile ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col overflow-y-auto lg:flex-row">
-          <aside className="w-full shrink-0 lg:w-80">
+        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+          <aside className="w-full shrink-0 lg:w-80 lg:overflow-y-auto">
             <ProfileSidebar profile={profile} canEdit={own} />
           </aside>
-          <main className="min-w-0 flex-1 px-4 py-6 sm:px-6">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:overflow-hidden">
             {readmeBusy ? (
               <div className="flex flex-col gap-3" aria-busy="true">
                 <Skeleton className="h-10 w-full motion-reduce:animate-none" />
                 <Skeleton className="h-48 w-full motion-reduce:animate-none" />
               </div>
             ) : null}
-            {!readmeBusy && !readme ? (
+            {!readmeBusy && !readme && !own ? (
               <Empty className="border border-dashed border-border py-10">
                 <EmptyHeader>
                   <EmptyTitle>No README.md</EmptyTitle>
@@ -165,17 +198,14 @@ export function UserProfile({ uid }: { uid: string }) {
                 </EmptyHeader>
               </Empty>
             ) : null}
-            {!readmeBusy && readme ? (
-              <section className="overflow-hidden rounded-lg border border-border bg-card">
-                <div className="border-b border-border px-4 py-2.5">
-                  <p className="truncate font-mono text-sm">
-                    {uid} / {README_PATH}
-                  </p>
-                </div>
-                <div className="px-4 py-6 sm:px-6">
-                  <DocsProse source={readme} variant="readme" />
-                </div>
-              </section>
+            {!readmeBusy && (readme || own) ? (
+              <ReadmeFile
+                uid={uid}
+                source={readme}
+                canEdit={own && Boolean(home)}
+                status={account.status}
+                onCommit={account.commitReadme}
+              />
             ) : null}
           </main>
         </div>

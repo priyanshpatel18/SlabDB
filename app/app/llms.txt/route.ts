@@ -4,7 +4,7 @@ import { absoluteUrl } from "@/lib/seo";
 export function GET() {
   const body = `# Slab
 
-> SQL catalog on a MagicBlock public Ephemeral Rollup. Pages on Irys.
+> Onchain GitHub. Catalog on a MagicBlock public Ephemeral Rollup. Pages on Irys.
 
 ## Docs
 

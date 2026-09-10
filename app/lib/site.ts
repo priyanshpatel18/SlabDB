@@ -1,17 +1,18 @@
 export const site = {
   appName: "Slab",
   appDescription:
-    "SQL-native storage for onchain data. Indexes on MagicBlock. Pages on Irys.",
+    "Onchain GitHub. Profiles, repos, and README on MagicBlock and Irys.",
   domainName: "localhost:3000",
 } as const;
 
 export const SEO_KEYWORDS = [
   "Slab",
-  "Slab DB",
+  "onchain GitHub",
+  "GitHub",
   "MagicBlock",
   "Ephemeral Rollup",
   "Irys",
-  "Solana SQL",
-  "onchain database",
-  "SQL catalog",
+  "Solana",
+  "onchain profile",
+  "README",
 ] as const;

@@ -11,13 +11,13 @@ export const viewport: Viewport = {
   themeColor: "#2c241c",
 };
 
-const defaultTitle = "Slab: SQL-native storage for onchain data";
+const defaultTitle = "Slab: onchain GitHub";
 
 export const metadata: Metadata = {
   ...getSEOTags({
     title: defaultTitle,
     description:
-      "SQL-native storage for onchain data. Indexes on MagicBlock. Pages on Irys.",
+      "Onchain GitHub. Profiles, repos, and README on MagicBlock and Irys.",
     keywords: [...SEO_KEYWORDS],
     canonicalUrlRelative: "/",
   }),

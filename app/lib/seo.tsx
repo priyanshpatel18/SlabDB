@@ -39,6 +39,14 @@ export const getSEOTags = ({
   const pageUrl = absoluteUrl(canonicalUrlRelative || "/");
   const ogUrl =
     typeof openGraph?.url === "string" ? openGraph.url : pageUrl;
+  const ogImage = {
+    url: absoluteUrl("/og.png"),
+    width: 1200,
+    height: 630,
+    alt: "Slab logo and wordmark. Onchain GitHub.",
+    type: "image/png",
+  };
+  const ogImages = openGraph?.images ?? [ogImage];
 
   return {
     title: resolvedTitle,
@@ -54,11 +62,13 @@ export const getSEOTags = ({
       siteName: site.appName,
       locale: "en_US",
       type: "website",
+      images: ogImages,
     },
     twitter: {
       card: "summary_large_image",
       title: openGraph?.title || resolvedTitle,
       description: openGraph?.description || resolvedDescription,
+      images: [absoluteUrl("/og.png")],
     },
     ...(canonicalUrlRelative
       ? { alternates: { canonical: pageUrl } }
@@ -102,7 +112,7 @@ export const renderSchemaTags = ({
         "@type": "SoftwareApplication",
         name,
         description,
-        image: absoluteUrl("/opengraph-image"),
+        image: absoluteUrl("/og.png"),
         url,
         author: {
           "@type": "Organization",

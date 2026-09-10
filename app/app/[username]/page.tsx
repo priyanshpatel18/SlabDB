@@ -3,8 +3,22 @@ import { notFound } from "next/navigation";
 import { UserProfile } from "@/components/user-profile";
 import { isReservedUsername } from "@/lib/cluster";
 import { getSEOTags } from "@/lib/seo";
+import { site } from "@/lib/site";
+import {
+  isUsernameFormat,
+  lookupUsernameRemote,
+  normalizeUsername,
+} from "@/lib/username-lookup";
 
 type UserParams = { username: string };
+
+async function resolveUid(raw: string): Promise<string | null> {
+  const uid = normalizeUsername(raw);
+  if (!isUsernameFormat(uid) || isReservedUsername(uid)) {
+    return null;
+  }
+  return uid;
+}
 
 export async function generateMetadata({
   params,
@@ -12,15 +26,25 @@ export async function generateMetadata({
   params: Promise<UserParams>;
 }): Promise<Metadata> {
   const { username } = await params;
-  const label = decodeURIComponent(username);
-  if (isReservedUsername(label)) {
+  const uid = await resolveUid(username);
+  if (!uid) {
     return getSEOTags({ title: "Not found", canonicalUrlRelative: "/" });
   }
+  let profile = null;
+  try {
+    profile = await lookupUsernameRemote(uid);
+  } catch {
+    profile = null;
+  }
+  const title = profile?.name ? `${profile.name} (@${uid})` : uid;
   return getSEOTags({
-    title: label,
-    description: "Public Slab profile.",
-    canonicalUrlRelative: `/${label}`,
-    openGraph: { title: `${label} | Slab` },
+    title,
+    description: site.appDescription,
+    canonicalUrlRelative: `/${uid}`,
+    openGraph: {
+      title: site.appName,
+      description: site.appDescription,
+    },
   });
 }
 
@@ -30,9 +54,15 @@ export default async function UsernamePage({
   params: Promise<UserParams>;
 }) {
   const { username } = await params;
-  const uid = decodeURIComponent(username);
-  if (isReservedUsername(uid)) {
+  const uid = await resolveUid(username);
+  if (!uid) {
     notFound();
   }
-  return <UserProfile uid={uid} />;
+  let initial = null;
+  try {
+    initial = await lookupUsernameRemote(uid);
+  } catch {
+    initial = null;
+  }
+  return <UserProfile uid={uid} initial={initial} />;
 }

@@ -1,13 +1,13 @@
 # Slab
 
-SQL-native storage for onchain data. Indexes run on a MagicBlock public Ephemeral Rollup. Table pages are 8,192 bytes on Irys.
+Onchain GitHub. Profiles, repos, and README on a MagicBlock public Ephemeral Rollup. Pages on Irys.
 
 ## Product
 
 - Name: Slab
-- Category: onchain SQL catalog
+- Category: onchain GitHub
 - Chains: Solana (base) + MagicBlock public ER
-- Storage: Irys 8 KiB pages
+- Storage: Irys pages
 
 ## Pages
 

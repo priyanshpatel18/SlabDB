@@ -4,6 +4,7 @@ import type { Profile } from "@/lib/profile";
 
 const PROFILE_KEY = "slab-profile:";
 const PUBLIC_KEY = "slab-public:";
+const README_KEY = "slab-readme:";
 const NAME_INDEX_KEY = "slab-usernames";
 
 export type CachedPublicProfile = Profile & {
@@ -31,6 +32,45 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
+export function readReadmeCache(uid: string): string {
+  if (!uid) {
+    return "";
+  }
+  const key = uid.trim().toLowerCase();
+  try {
+    const raw = localStorage.getItem(README_KEY + key);
+    if (typeof raw === "string" && raw.length > 0) {
+      return raw;
+    }
+  } catch {
+    return readPublicCache(key)?.readme ?? "";
+  }
+  return readPublicCache(key)?.readme ?? "";
+}
+
+export function writeReadmeCache(uid: string, body: string, wallet = "") {
+  const key = uid.trim().toLowerCase();
+  if (!key) {
+    return;
+  }
+  try {
+    localStorage.setItem(README_KEY + key, body);
+  } catch {
+    return;
+  }
+  const publicRow = readPublicCache(key);
+  if (publicRow) {
+    writePublicCache({ ...publicRow, readme: body });
+    return;
+  }
+  if (wallet) {
+    const profile = readProfileCache(wallet);
+    if (profile?.uid === key) {
+      writePublicCache({ ...profile, wallet, readme: body });
+    }
+  }
+}
+
 export function readProfileCache(wallet: string): Profile | null {
   if (!wallet) {
     return null;
@@ -53,7 +93,7 @@ export function writeProfileCache(wallet: string, profile: Profile) {
   writePublicCache({
     ...profile,
     wallet,
-    readme: readPublicCache(profile.uid)?.readme ?? "",
+    readme: readReadmeCache(profile.uid),
   });
 }
 

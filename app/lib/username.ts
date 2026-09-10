@@ -2,155 +2,48 @@
 
 import { Buffer } from "buffer";
 import { fundIrys, type StatusFn } from "slabdb/web";
-import { IRYS_GATEWAY, IRYS_RPC_URL } from "@/lib/cluster";
+import { IRYS_RPC_URL } from "@/lib/cluster";
 import {
   localWalletForUid,
   readPublicCache,
+  readReadmeCache,
   releaseLocalUid,
   writePublicCache,
+  writeReadmeCache,
   type CachedPublicProfile,
 } from "@/lib/profile-cache";
 import type { Profile } from "@/lib/profile";
+import {
+  USERNAME_APP,
+  USERNAME_FILE,
+  isUsernameFormat,
+  lookupUsernameRemote,
+} from "@/lib/username-lookup";
 import type { SlabSigner } from "@/lib/wallet";
-
-const APP_NAME = "Slab";
-const APP_FILE = "username";
-const GQL_URLS = [
-  `${IRYS_GATEWAY.replace(/\/$/, "")}/graphql`,
-  "https://arweave.devnet.irys.xyz/graphql",
-];
-
-type GqlNode = {
-  id: string;
-  timestamp?: number;
-  tags?: { name: string; value: string }[];
-};
-
-function tag(node: GqlNode, name: string): string {
-  return (
-    node.tags?.find((item) => item.name === name)?.value?.trim() ?? ""
-  );
-}
 
 function isIrysUnpaid(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /402|not enough funds|not enough balance/i.test(msg);
 }
 
-async function graphql(uid: string): Promise<GqlNode[]> {
-  const query = {
-    query: `query {
-      transactions(
-        tags: [
-          { name: "App-Name", values: ["${APP_NAME}"] }
-          { name: "App-File", values: ["${APP_FILE}"] }
-          { name: "Username", values: ["${uid}"] }
-        ]
-        first: 25
-        order: DESC
-      ) {
-        edges { node { id timestamp tags { name value } } }
-      }
-    }`,
-  };
-  let lastErr: unknown;
-  for (const url of GQL_URLS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(query),
-      });
-      if (!res.ok) {
-        lastErr = new Error(`GraphQL ${res.status}`);
-        continue;
-      }
-      const body = (await res.json()) as {
-        data?: {
-          transactions?: { edges?: { node: GqlNode }[] };
-        };
-      };
-      return body.data?.transactions?.edges?.map((edge) => edge.node) ?? [];
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  if (lastErr) {
-    throw lastErr instanceof Error ? lastErr : new Error("Username lookup failed");
-  }
-  return [];
-}
-
-function ownerWallet(nodes: GqlNode[]): string | null {
-  if (nodes.length === 0) {
-    return null;
-  }
-  const oldest = [...nodes].sort(
-    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
-  )[0];
-  const wallet = tag(oldest, "Wallet");
-  const latest = nodes.find((node) => tag(node, "Wallet") === wallet) ?? oldest;
-  if (tag(latest, "Active") === "0") {
-    return null;
-  }
-  return wallet || null;
-}
-
-async function readClaim(id: string): Promise<CachedPublicProfile | null> {
-  try {
-    const res = await fetch(`${IRYS_GATEWAY.replace(/\/$/, "")}/${id}`);
-    if (!res.ok) {
-      return null;
-    }
-    const row = (await res.json()) as CachedPublicProfile;
-    if (!row?.uid || !row.name || !row.wallet) {
-      return null;
-    }
-    return {
-      uid: row.uid,
-      name: row.name,
-      bio: typeof row.bio === "string" ? row.bio : "",
-      website: typeof row.website === "string" ? row.website : "",
-      pfp: typeof row.pfp === "string" ? row.pfp : "",
-      links: Array.isArray(row.links) ? row.links : ["", "", "", "", ""],
-      wallet: row.wallet,
-      readme: typeof row.readme === "string" ? row.readme : "",
-    };
-  } catch {
-    return null;
-  }
-}
-
 export async function lookupUsername(
   raw: string
 ): Promise<CachedPublicProfile | null> {
   const uid = raw.trim().toLowerCase();
-  if (!/^[a-z][a-z0-9_]{2,31}$/.test(uid)) {
+  if (!isUsernameFormat(uid)) {
     return null;
   }
   const cached = readPublicCache(uid);
   try {
-    const nodes = await graphql(uid);
-    const wallet = ownerWallet(nodes);
-    if (!wallet) {
+    const remote = await lookupUsernameRemote(uid);
+    if (!remote) {
       return cached?.wallet ? cached : null;
     }
-    const latest = nodes.find((node) => tag(node, "Wallet") === wallet);
-    const remote = latest ? await readClaim(latest.id) : null;
-    const next =
-      remote ??
-      (cached?.wallet === wallet
-        ? cached
-        : {
-            uid,
-            name: uid,
-            bio: "",
-            website: "",
-            pfp: "",
-            links: ["", "", "", "", ""],
-            wallet,
-            readme: "",
-          });
+    const readme = remote.readme || cached?.readme || readReadmeCache(uid);
+    if (readme) {
+      writeReadmeCache(uid, readme, remote.wallet);
+    }
+    const next = { ...remote, readme };
     writePublicCache(next);
     return next;
   } catch {
@@ -244,8 +137,8 @@ export async function claimUsername(
     wallet,
     [
       { name: "Content-Type", value: "application/json" },
-      { name: "App-Name", value: APP_NAME },
-      { name: "App-File", value: APP_FILE },
+      { name: "App-Name", value: USERNAME_APP },
+      { name: "App-File", value: USERNAME_FILE },
       { name: "Username", value: profile.uid },
       { name: "Wallet", value: address },
       { name: "Active", value: "1" },
@@ -258,8 +151,8 @@ export async function claimUsername(
       wallet,
       [
         { name: "Content-Type", value: "application/json" },
-        { name: "App-Name", value: APP_NAME },
-        { name: "App-File", value: APP_FILE },
+        { name: "App-Name", value: USERNAME_APP },
+        { name: "App-File", value: USERNAME_FILE },
         { name: "Username", value: extras.previousUid },
         { name: "Wallet", value: address },
         { name: "Active", value: "0" },
@@ -274,5 +167,6 @@ export async function claimUsername(
     throw new Error("Username is taken");
   }
   writePublicCache(row);
+  writeReadmeCache(profile.uid, extras.readme, address);
   return row;
 }

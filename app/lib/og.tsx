@@ -26,6 +26,10 @@ async function loadBrandSrc(name: "logo.png" | "wordmark.png") {
   return `data:image/png;base64,${data.toString("base64")}`;
 }
 
+const LOGO_PX = 200;
+const WORDMARK_H = 168;
+const WORDMARK_W = Math.round(WORDMARK_H * (1991 / 790));
+
 type OgCardProps = {
   kicker: string;
   title: string;
@@ -73,29 +77,41 @@ export function OgCard({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 20,
             marginTop: 28,
+            marginLeft: -12,
           }}
         >
-          <img alt="" src={logoSrc} width={88} height={88} />
-          <img alt="Slab" src={wordmarkSrc} width={252} height={88} />
+          <img
+            alt=""
+            src={logoSrc}
+            width={LOGO_PX}
+            height={LOGO_PX}
+            style={{ objectFit: "contain" }}
+          />
+          <img
+            alt="Slab"
+            src={wordmarkSrc}
+            width={WORDMARK_W}
+            height={WORDMARK_H}
+            style={{ objectFit: "contain", marginLeft: -28 }}
+          />
         </div>
         <div
           style={{
-            width: 168,
-            height: 3,
-            marginTop: 16,
+            width: 220,
+            height: 4,
+            marginTop: 8,
             backgroundColor: KILN_COPPER,
           }}
         />
         <div
           style={{
             display: "flex",
-            marginTop: 36,
-            maxWidth: 860,
+            marginTop: 32,
+            maxWidth: 920,
             fontFamily: "Slab Sans",
-            fontSize: 40,
-            lineHeight: 1.2,
+            fontSize: 36,
+            lineHeight: 1.25,
             color: WORDMARK_CREAM,
           }}
         >

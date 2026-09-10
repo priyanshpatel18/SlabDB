@@ -12,7 +12,8 @@ import {
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import type { SlabSigner } from "@/lib/wallet";
-import { openHome, type HomeState } from "@/lib/home";
+import { HOME_REPO } from "@/lib/cluster";
+import { openHome, saveReadme, type HomeState } from "@/lib/home";
 import {
   ensureProfileTable,
   loadProfile,
@@ -20,7 +21,8 @@ import {
   type Profile,
   type ProfileDraft,
 } from "@/lib/profile";
-import { readProfileCache, writeProfileCache } from "@/lib/profile-cache";
+import { readProfileCache, writeProfileCache, writeReadmeCache } from "@/lib/profile-cache";
+import { claimUsername } from "@/lib/username";
 import { loadSolLamports } from "@/lib/wallet-holdings";
 
 function asSigner(
@@ -49,6 +51,7 @@ type AccountValue = {
   error: string | null;
   retry: () => void;
   save: (draft: ProfileDraft) => Promise<void>;
+  commitReadme: (body: string) => Promise<void>;
 };
 
 const AccountContext = createContext<AccountValue | null>(null);
@@ -135,10 +138,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         setHome(next);
         if (row) {
           writeProfileCache(signerId, row);
+          writeReadmeCache(row.uid, next.readme, signerId);
           setProfile(row);
         } else {
           const cached = readProfileCache(signerId);
           setProfile(cached);
+          if (cached?.uid) {
+            writeReadmeCache(cached.uid, next.readme, signerId);
+          }
         }
         setStatus("");
         setError(null);
@@ -174,13 +181,29 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         throw new Error("Sign in first");
       }
       const next = await saveProfile(home.session, signer, draft, setStatus, {
-        readme: home.active === "home" ? home.readme : "",
+        readme: home.active === HOME_REPO ? home.readme : "",
       });
       writeProfileCache(signer.publicKey.toBase58(), next);
       setProfile(next);
       setStatus("");
     },
     [home, signer]
+  );
+
+  const commitReadme = useCallback(
+    async (body: string) => {
+      if (!signer || !home) {
+        throw new Error("Sign in first");
+      }
+      const saved = await saveReadme(home.session, HOME_REPO, body, setStatus);
+      setHome({ ...home, readme: saved, active: HOME_REPO });
+      if (profile) {
+        writeReadmeCache(profile.uid, saved, signer.publicKey.toBase58());
+        await claimUsername(signer, profile, { readme: saved }, setStatus);
+      }
+      setStatus("");
+    },
+    [home, profile, signer]
   );
 
   const value = useMemo<AccountValue>(
@@ -196,9 +219,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       error,
       retry,
       save,
+      commitReadme,
     }),
     [
       busy,
+      commitReadme,
       error,
       funded,
       home,

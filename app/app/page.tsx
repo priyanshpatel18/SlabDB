@@ -7,7 +7,7 @@ export default function Home() {
       {renderSchemaTags({
         name: "Slab",
         description:
-          "SQL-native storage for onchain data. Indexes on MagicBlock. Pages on Irys.",
+          "Onchain GitHub. Profiles, repos, and README on MagicBlock and Irys.",
         applicationCategory: "DeveloperApplication",
         operatingSystem: "Web",
       })}

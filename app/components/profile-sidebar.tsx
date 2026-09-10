@@ -6,6 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Pfp } from "@/components/pfp";
 import type { Profile } from "@/lib/profile";
 
+function hrefLabel(href: string): string {
+  return href.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+function ProfileLink({ href }: { href: string }) {
+  return (
+    <li>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-kiln hover:underline focus-visible:text-kiln sm:min-h-7"
+      >
+        <Link2 className="size-4 shrink-0" aria-hidden />
+        <span className="truncate">{hrefLabel(href)}</span>
+      </a>
+    </li>
+  );
+}
+
 export function ProfileSidebar({
   profile,
   canEdit,
@@ -13,58 +33,53 @@ export function ProfileSidebar({
   profile: Profile | null;
   canEdit: boolean;
 }) {
+  const links = [
+    profile?.website?.trim() ?? "",
+    ...(profile?.links ?? []),
+  ].filter(Boolean);
+
   return (
-    <div className="px-4 py-6">
-      <Pfp id={profile?.pfp} size={260} className="w-full max-w-[260px]" />
+    <div className="px-4 py-6 lg:pr-8">
+      <Pfp
+        id={profile?.pfp}
+        alt={profile?.name || profile?.uid || ""}
+        size={296}
+        className="aspect-square w-full border border-border shadow-[0_0_0_1px_oklch(0_0_0/0.04)]"
+        style={{ width: "100%", height: "auto" }}
+      />
       {profile?.name ? (
-        <h1 className="mt-4 truncate text-2xl font-semibold tracking-tight">
+        <h1 className="mt-4 truncate text-2xl leading-tight font-semibold">
           {profile.name}
         </h1>
       ) : null}
       {profile?.uid ? (
-        <p className="truncate text-lg text-muted-foreground">{profile.uid}</p>
+        <p className="truncate text-xl leading-tight font-light text-muted-foreground">
+          {profile.uid}
+        </p>
       ) : null}
       {profile?.bio ? (
-        <p className="mt-4 text-sm text-muted-foreground">{profile.bio}</p>
+        <p className="mt-3 text-sm leading-snug text-foreground">
+          {profile.bio}
+        </p>
       ) : null}
       {canEdit ? (
         <Button
           type="button"
           variant="outline"
-          className="mt-4 h-10 w-full"
+          className="mt-4 h-10 w-full text-sm font-medium"
           nativeButton={false}
           render={<Link href="/settings" />}
         >
           Edit profile
         </Button>
       ) : null}
-      {profile?.website ? (
-        <a
-          href={profile.website}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-4 flex min-h-10 items-center gap-2 truncate text-sm text-kiln hover:underline"
-        >
-          <Link2 className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">
-            {profile.website.replace(/^https?:\/\//, "")}
-          </span>
-        </a>
+      {links.length > 0 ? (
+        <ul className="mt-4 flex flex-col">
+          {links.map((href) => (
+            <ProfileLink key={href} href={href} />
+          ))}
+        </ul>
       ) : null}
-      {(profile?.links ?? [])
-        .filter((link) => link.trim())
-        .map((link) => (
-          <a
-            key={link}
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 flex min-h-10 items-center gap-2 truncate text-sm text-muted-foreground hover:text-foreground"
-          >
-            <Link2 className="size-3.5 shrink-0" aria-hidden />
-            <span className="truncate">{link.replace(/^https?:\/\//, "")}</span>
-          </a>
-        ))}
     </div>
   );
 }

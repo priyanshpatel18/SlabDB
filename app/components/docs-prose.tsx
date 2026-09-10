@@ -1,5 +1,6 @@
 import type { Components } from "react-markdown";
 import Markdown from "react-markdown";
+import { cn } from "cn";
 
 const docsComponents: Components = {
   h1: ({ children }) => (
@@ -30,17 +31,16 @@ const docsComponents: Components = {
   ),
   li: ({ children }) => <li className="pl-1">{children}</li>,
   a: ({ href, children }) => (
-    <a
-      href={href}
-      className="text-kiln underline-offset-4 hover:underline"
-    >
+    <a href={href} className="text-kiln underline-offset-4 hover:underline">
       {children}
     </a>
   ),
   code: ({ className, children }) => {
     const block = Boolean(className);
     if (block) {
-      return <code className="font-mono text-[13px] text-foreground">{children}</code>;
+      return (
+        <code className="font-mono text-[13px] text-foreground">{children}</code>
+      );
     }
     return (
       <code className="rounded-md bg-muted px-1 py-0.5 font-mono text-[0.85em] text-foreground">
@@ -56,28 +56,78 @@ const docsComponents: Components = {
 };
 
 const readmeComponents: Components = {
-  ...docsComponents,
   h1: ({ children }) => (
-    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+    <h1 className="mb-4 border-b border-border pb-2 text-[2em] leading-tight font-semibold">
       {children}
     </h1>
   ),
-  p: ({ children }) => (
-    <p className="mt-4 text-[0.95rem] leading-relaxed text-foreground">
+  h2: ({ children }) => (
+    <h2 className="mt-6 mb-4 border-b border-border pb-2 text-[1.5em] leading-tight font-semibold">
       {children}
-    </p>
+    </h2>
   ),
+  h3: ({ children }) => (
+    <h3 className="mt-6 mb-4 text-[1.25em] leading-tight font-semibold">
+      {children}
+    </h3>
+  ),
+  p: ({ children }) => (
+    <p className="mb-4 text-base leading-7 whitespace-normal">{children}</p>
+  ),
+  ul: ({ children }) => (
+    <ul className="mb-4 list-disc space-y-1 pl-8 text-base leading-7">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="mb-4 list-decimal space-y-1 pl-8 text-base leading-7">
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => <li className="pl-1">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      className="inline-block align-middle text-kiln underline-offset-4 hover:underline [&:has(img)]:text-transparent [&:has(img)]:no-underline"
+    >
+      {children}
+    </a>
+  ),
+  img: ({ src, alt }) => {
+    if (!src) {
+      return null;
+    }
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={alt ?? ""}
+        className="m-0 inline-block h-auto max-w-full align-middle"
+      />
+    );
+  },
+  code: docsComponents.code,
+  pre: docsComponents.pre,
+  hr: () => <hr className="my-6 border-border" />,
 };
 
 export function DocsProse({
   source,
   variant = "docs",
+  className,
 }: {
   source: string;
   variant?: "docs" | "readme";
+  className?: string;
 }) {
   return (
-    <article className="max-w-2xl">
+    <article
+      className={cn(
+        variant === "readme" ? "slab-readme w-full max-w-none" : "max-w-2xl",
+        className
+      )}
+    >
       <Markdown
         components={variant === "readme" ? readmeComponents : docsComponents}
       >

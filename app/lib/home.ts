@@ -198,6 +198,39 @@ export async function openHome(
   return next;
 }
 
+export async function saveReadme(
+  session: ChainSession,
+  repo: string,
+  body: string,
+  onStatus: StatusFn = () => {}
+): Promise<string> {
+  const name = repo === HOME_REPO ? HOME_REPO : assertRepoName(repo);
+  return withTimeout(
+    (async () => {
+      onStatus(`Writing ${README_PATH}`);
+      const rows = await session.db.exec(
+        `SELECT * FROM ${name} WHERE path = $1`,
+        [README_PATH]
+      );
+      if (rows[0]) {
+        await session.db.exec(`UPDATE ${name} SET body = $1 WHERE path = $2`, [
+          body,
+          README_PATH,
+        ]);
+      } else {
+        await session.db.exec(
+          `INSERT INTO ${name} (path, body) VALUES ($1, $2)`,
+          [README_PATH, body]
+        );
+      }
+      onStatus("");
+      return (await readmeBody(session.db, name)) || body;
+    })(),
+    90_000,
+    "README"
+  );
+}
+
 export async function loadRepoReadme(
   session: ChainSession,
   repo: string
