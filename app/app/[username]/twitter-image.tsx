@@ -1,2 +1,3 @@
 export const runtime = "nodejs";
-export { default, alt, size, contentType, revalidate } from "./opengraph-image";
+export const revalidate = 60;
+export { default, alt, size, contentType } from "./opengraph-image";
