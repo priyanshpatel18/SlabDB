@@ -16,7 +16,9 @@ let irysHold: Promise<IrysFunder> | null = null;
 function loadSecretKey(): Uint8Array {
   const path =
     process.env.ANCHOR_WALLET || `${homedir()}/.config/solana/id.json`;
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as number[];
+  const parsed = JSON.parse(
+    readFileSync(/*turbopackIgnore: true*/ path, "utf8")
+  ) as number[];
   return Uint8Array.from(parsed);
 }
 

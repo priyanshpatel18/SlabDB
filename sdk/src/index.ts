@@ -54,7 +54,7 @@ export type {
   SqlJson,
   ColTypeName,
 } from "./types";
-export { withTimeout } from "./timeout";
+export { withTimeout, isIrysUnpaid } from "./timeout";
 export { fundTxIdFromError, sendIrysFund } from "./irys-fund";
 export type { IrysFunder, StatusFn } from "./irys-fund";
 export {

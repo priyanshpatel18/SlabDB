@@ -1,6 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { type SlabClient } from "slabdb";
-import { Slab } from "slabdb/node";
+import { connect, type SlabClient } from "slabdb";
 import { HOME_NS } from "@/lib/cluster";
 import { sqlTable } from "@/lib/files";
 import { commitBlobPath, commitMetaPath, isHistoryPath } from "@/lib/history";
@@ -108,7 +107,7 @@ export async function applyCliPush(opts: {
   repo: string;
   commit: CliPushCommit;
 }): Promise<{ wrote: number; id: string; urlPath: string }> {
-  const client = await Slab.connect({
+  const client = await connect({
     wallet: privySlabWallet(opts.walletId, opts.wallet),
     ns: HOME_NS,
     owner: new PublicKey(opts.wallet),
