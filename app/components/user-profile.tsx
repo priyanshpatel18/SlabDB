@@ -120,7 +120,11 @@ export function UserProfile({
       : fetchKey && fetched?.key === fetchKey
         ? fetched.body
         : "";
-  const readme = liveReadme || remote?.readme || cachedReadme;
+  const readme =
+    liveReadme ||
+    remote?.readme ||
+    (initial?.uid === uid ? initial.readme : "") ||
+    cachedReadme;
   const readmeBusy = Boolean(!readme && fetchKey && fetched?.key !== fetchKey);
   const loading =
     !profile &&
@@ -128,7 +132,7 @@ export function UserProfile({
       !lookupDone);
 
   return (
-    <div className="flex h-dvh max-w-[100vw] min-h-dvh flex-col overflow-hidden bg-background">
+    <div className="flex min-h-dvh max-w-[100vw] flex-col bg-background lg:h-dvh lg:overflow-hidden">
       <SiteHeader />
       {account.error && own ? (
         <div className="mx-auto w-full max-w-3xl px-4 py-8">
@@ -150,11 +154,13 @@ export function UserProfile({
       ) : null}
 
       {loading ? (
-        <div className="mx-auto flex w-full max-w-5xl gap-8 px-4 py-8">
-          <div className="hidden w-72 shrink-0 flex-col gap-3 lg:flex">
-            <Skeleton className="size-64 rounded-full motion-reduce:animate-none" />
-            <Skeleton className="h-8 w-40 motion-reduce:animate-none" />
-            <Skeleton className="h-4 w-28 motion-reduce:animate-none" />
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:py-8">
+          <div className="flex items-center gap-4 lg:w-72 lg:shrink-0 lg:flex-col lg:items-stretch">
+            <Skeleton className="size-[72px] rounded-full motion-reduce:animate-none lg:size-64" />
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-7 w-40 motion-reduce:animate-none" />
+              <Skeleton className="h-5 w-28 motion-reduce:animate-none" />
+            </div>
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <Skeleton className="h-10 w-full motion-reduce:animate-none" />
@@ -177,11 +183,11 @@ export function UserProfile({
       ) : null}
 
       {!loading && profile ? (
-        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col lg:min-h-0 lg:flex-row lg:overflow-hidden">
           <aside className="w-full shrink-0 lg:w-80 lg:overflow-y-auto">
             <ProfileSidebar profile={profile} canEdit={own} />
           </aside>
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-6 sm:px-6 lg:overflow-hidden">
+          <main className="flex min-w-0 flex-1 flex-col px-4 pb-8 pt-1 sm:px-6 lg:min-h-0 lg:overflow-hidden lg:py-6">
             {readmeBusy ? (
               <div className="flex flex-col gap-3" aria-busy="true">
                 <Skeleton className="h-10 w-full motion-reduce:animate-none" />

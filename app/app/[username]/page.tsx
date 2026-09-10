@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { UserProfile } from "@/components/user-profile";
 import { isReservedUsername } from "@/lib/cluster";
-import { getSEOTags } from "@/lib/seo";
+import { absoluteUrl, getSEOTags } from "@/lib/seo";
 import { site } from "@/lib/site";
 import {
   isUsernameFormat,
@@ -37,13 +37,24 @@ export async function generateMetadata({
     profile = null;
   }
   const title = profile?.name ? `${profile.name} (@${uid})` : uid;
+  const description =
+    profile?.bio?.trim() ||
+    (profile ? `${title} on Slab.` : site.appDescription);
+  const image = {
+    url: absoluteUrl(`/${uid}/opengraph-image`),
+    width: 1200,
+    height: 630,
+    alt: title,
+    type: "image/png",
+  };
   return getSEOTags({
     title,
-    description: site.appDescription,
+    description,
     canonicalUrlRelative: `/${uid}`,
     openGraph: {
-      title: site.appName,
-      description: site.appDescription,
+      title,
+      description,
+      images: [image],
     },
   });
 }

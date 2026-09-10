@@ -47,6 +47,16 @@ export const getSEOTags = ({
     type: "image/png",
   };
   const ogImages = openGraph?.images ?? [ogImage];
+  const twitterImage = (() => {
+    const first = Array.isArray(ogImages) ? ogImages[0] : ogImages;
+    if (typeof first === "string") {
+      return first;
+    }
+    if (first && typeof first === "object" && "url" in first) {
+      return String(first.url);
+    }
+    return ogImage.url;
+  })();
 
   return {
     title: resolvedTitle,
@@ -68,7 +78,7 @@ export const getSEOTags = ({
       card: "summary_large_image",
       title: openGraph?.title || resolvedTitle,
       description: openGraph?.description || resolvedDescription,
-      images: [absoluteUrl("/og.png")],
+      images: [twitterImage],
     },
     ...(canonicalUrlRelative
       ? { alternates: { canonical: pageUrl } }

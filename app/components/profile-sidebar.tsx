@@ -39,24 +39,26 @@ export function ProfileSidebar({
   ].filter(Boolean);
 
   return (
-    <div className="px-4 py-6 lg:pr-8">
-      <Pfp
-        id={profile?.pfp}
-        alt={profile?.name || profile?.uid || ""}
-        size={296}
-        className="aspect-square w-full border border-border shadow-[0_0_0_1px_oklch(0_0_0/0.04)]"
-        style={{ width: "100%", height: "auto" }}
-      />
-      {profile?.name ? (
-        <h1 className="mt-4 truncate text-2xl leading-tight font-semibold">
-          {profile.name}
-        </h1>
-      ) : null}
-      {profile?.uid ? (
-        <p className="truncate text-xl leading-tight font-light text-muted-foreground">
-          {profile.uid}
-        </p>
-      ) : null}
+    <div className="px-4 py-5 lg:py-6 lg:pr-8">
+      <div className="flex items-center gap-4 lg:flex-col lg:items-stretch lg:gap-0">
+        <Pfp
+          id={profile?.pfp}
+          alt={profile?.name || profile?.uid || ""}
+          className="h-[72px] w-[72px] border border-border shadow-[0_0_0_1px_oklch(0_0_0/0.04)] sm:h-20 sm:w-20 lg:aspect-square lg:h-auto lg:w-full"
+        />
+        <div className="min-w-0 flex-1 lg:mt-4">
+          {profile?.name ? (
+            <h1 className="truncate text-xl leading-tight font-semibold lg:text-2xl">
+              {profile.name}
+            </h1>
+          ) : null}
+          {profile?.uid ? (
+            <p className="truncate text-base leading-tight font-light text-muted-foreground lg:text-xl">
+              {profile.uid}
+            </p>
+          ) : null}
+        </div>
+      </div>
       {profile?.bio ? (
         <p className="mt-3 text-sm leading-snug text-foreground">
           {profile.bio}

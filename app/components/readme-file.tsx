@@ -96,7 +96,7 @@ export function ReadmeFile({
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+    <section className="flex flex-col overflow-hidden rounded-lg border border-border bg-card lg:min-h-0 lg:flex-1">
       <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -192,7 +192,7 @@ export function ReadmeFile({
           </div>
 
           {tab === "edit" ? (
-            <div className="flex min-h-0 flex-1">
+            <div className="flex min-h-64 lg:min-h-0 lg:flex-1">
               <div
                 ref={gutterRef}
                 aria-hidden
@@ -222,7 +222,7 @@ export function ReadmeFile({
               />
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+            <div className="px-4 py-6 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               {draft.trim() ? (
                 <DocsProse source={draft} variant="readme" />
               ) : (
@@ -240,11 +240,11 @@ export function ReadmeFile({
           </div>
         </>
       ) : source ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+        <div className="px-4 py-6 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <DocsProse source={source} variant="readme" />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-10">
+        <div className="px-4 py-10 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <p className="text-sm text-muted-foreground">
             This profile has no README.md yet.
           </p>

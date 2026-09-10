@@ -7,7 +7,7 @@ import { pfpSrc } from "@/lib/profile";
 export function Pfp({
   id,
   alt = "",
-  size = 32,
+  size,
   className,
   style,
 }: {
@@ -22,9 +22,12 @@ export function Pfp({
     <span
       className={cn(
         "inline-flex shrink-0 overflow-hidden rounded-full bg-muted",
+        size == null && !className && "size-8",
         className
       )}
-      style={{ width: size, height: size, ...style }}
+      style={
+        size != null ? { width: size, height: size, ...style } : style
+      }
       aria-hidden={!alt}
     >
       {src ? (
