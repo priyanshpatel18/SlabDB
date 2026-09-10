@@ -52,11 +52,9 @@ export function DocsShell({
             {children}
             <DocsPager slug={slug} />
           </main>
-          <div className="mt-16">
-            <SiteFooter />
-          </div>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

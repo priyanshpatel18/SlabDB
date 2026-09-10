@@ -10,25 +10,24 @@ const LINKS = [
   { href: "/cookies", label: "Cookies" },
 ] as const;
 
+const itemClass =
+  "inline-flex h-14 items-center text-sm text-foreground/85 underline-offset-4 hover:text-kiln hover:underline focus-visible:underline";
+
 export function SiteFooter() {
   return (
-    <footer className="mt-auto border-t border-border px-4 py-4 pt-[max(1rem,env(safe-area-inset-bottom))]">
+    <footer className="mt-auto border-t border-border pt-[env(safe-area-inset-bottom)]">
       <nav
         aria-label="Legal"
-        className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 text-sm"
+        className="flex h-14 w-full min-w-0 flex-wrap items-center justify-center gap-x-4 px-4"
       >
         {LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="min-h-10 text-foreground/85 underline-offset-4 hover:text-kiln hover:underline focus-visible:underline sm:min-h-7"
-          >
+          <Link key={link.href} href={link.href} className={itemClass}>
             {link.label}
           </Link>
         ))}
         <button
           type="button"
-          className="min-h-10 text-left text-foreground/85 underline-offset-4 hover:text-kiln hover:underline focus-visible:underline sm:min-h-7"
+          className={`${itemClass} border-0 bg-transparent p-0`}
           onClick={() => openConsentBanner()}
         >
           Cookie settings

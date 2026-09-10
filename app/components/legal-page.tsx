@@ -19,9 +19,7 @@ export function LegalPage({ slug }: { slug: string }) {
       >
         <DocsProse source={readDoc(page.file)} />
       </main>
-      <div className="mt-8">
-        <SiteFooter />
-      </div>
+      <SiteFooter />
     </div>
   );
 }
