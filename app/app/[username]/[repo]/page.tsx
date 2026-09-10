@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { RepoView } from "@/components/repo-view";
 import { HOME_REPO, isReservedUsername, profilePath } from "@/lib/cluster";
 import { normalizeRepoName, parseRepoParam } from "@/lib/files";
+import { loadRepoShare, repoShareSeo } from "@/lib/repo-share";
 import { absoluteUrl, getSEOTags } from "@/lib/seo";
 import {
   isUsernameFormat,
@@ -22,20 +23,26 @@ export async function generateMetadata({
   if (!isUsernameFormat(uid) || isReservedUsername(uid) || !repo) {
     return getSEOTags({ title: "Not found", canonicalUrlRelative: "/" });
   }
-  const title = `${uid}/${repo}`;
+  let share = null;
+  try {
+    share = await loadRepoShare(uid, repo);
+  } catch {
+    share = null;
+  }
+  const copy = repoShareSeo(share, uid, repo);
   return getSEOTags({
-    title,
-    description: `${title} on Slab.`,
+    title: copy.title,
+    description: copy.description,
     canonicalUrlRelative: `/${uid}/${repo}`,
     openGraph: {
-      title,
-      description: `${title} on Slab.`,
+      title: copy.title,
+      description: copy.description,
       images: [
         {
           url: absoluteUrl(`/${uid}/${repo}/opengraph-image`),
           width: 1200,
           height: 630,
-          alt: title,
+          alt: `${uid}/${repo}`,
           type: "image/png",
         },
       ],

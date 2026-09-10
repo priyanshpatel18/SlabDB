@@ -392,3 +392,256 @@ export async function renderProfileOgImage(profile: {
     },
   );
 }
+
+const REPO_PFP_PX = 184;
+const REPO_PFP_RADIUS = 28;
+const BAR_H = 18;
+
+type RepoOgProps = {
+  uid: string;
+  repo: string;
+  description: string;
+  letter: string;
+  pfpSrc: string | null;
+  commits: number;
+  files: number;
+  statsLoaded: boolean;
+  logoSrc: string;
+  wordmarkSrc: string;
+};
+
+function StatChip({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        marginRight: 36,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: KILN_COPPER,
+        }}
+      />
+      <div
+        style={{
+          display: "flex",
+          marginLeft: 12,
+          fontFamily: "Slab Sans",
+          fontSize: 24,
+          color: "#c4a894",
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+function RepoOgCard({
+  uid,
+  repo,
+  description,
+  letter,
+  pfpSrc,
+  commits,
+  files,
+  statsLoaded,
+  logoSrc,
+  wordmarkSrc,
+}: RepoOgProps) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        backgroundColor: KILN_BG,
+        backgroundImage:
+          "linear-gradient(to right, rgba(232,144,88,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(232,144,88,0.08) 1px, transparent 1px)",
+        backgroundSize: "64px 64px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          padding: "52px 72px 32px 72px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            marginLeft: -8,
+          }}
+        >
+          <img
+            alt=""
+            src={logoSrc}
+            width={MARK_SM}
+            height={MARK_SM}
+            style={{ objectFit: "contain" }}
+          />
+          <img
+            alt="Slab"
+            src={wordmarkSrc}
+            width={WORDMARK_SM_W}
+            height={WORDMARK_SM_H}
+            style={{ objectFit: "contain", marginLeft: -10 }}
+          />
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            marginTop: 28,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: 820,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                fontFamily: "Slab Sans",
+                fontSize: 52,
+                lineHeight: 1.15,
+              }}
+            >
+              <div style={{ display: "flex", color: "#c4a894" }}>{`${uid}/`}</div>
+              <div style={{ display: "flex", color: WORDMARK_CREAM }}>{repo}</div>
+            </div>
+            {description ? (
+              <div
+                style={{
+                  display: "flex",
+                  marginTop: 24,
+                  fontFamily: "Slab Sans",
+                  fontSize: 28,
+                  lineHeight: 1.4,
+                  color: "#c4a894",
+                }}
+              >
+                {clip(description, 180)}
+              </div>
+            ) : null}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              width: REPO_PFP_PX,
+              height: REPO_PFP_PX,
+              borderRadius: REPO_PFP_RADIUS,
+              overflow: "hidden",
+              backgroundColor: "#3d3228",
+              border: "3px solid rgba(232,144,88,0.35)",
+              alignItems: "center",
+              justifyContent: "center",
+              marginLeft: 32,
+            }}
+          >
+            {pfpSrc ? (
+              <img
+                alt=""
+                src={pfpSrc}
+                width={REPO_PFP_PX}
+                height={REPO_PFP_PX}
+                style={{ objectFit: "cover" }}
+              />
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  fontFamily: "Slab Sans",
+                  fontSize: 84,
+                  color: WORDMARK_CREAM,
+                }}
+              >
+                {letter}
+              </div>
+            )}
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            marginTop: "auto",
+            paddingTop: 36,
+          }}
+        >
+          <StatChip label="Public" />
+          {statsLoaded ? (
+            <StatChip label={plural(commits, "commit", "commits")} />
+          ) : null}
+          {statsLoaded ? (
+            <StatChip label={plural(files, "file", "files")} />
+          ) : null}
+        </div>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          width: "100%",
+          height: BAR_H,
+          backgroundColor: KILN_COPPER,
+        }}
+      />
+    </div>
+  );
+}
+
+export async function renderRepoOgImage(share: {
+  uid: string;
+  repo: string;
+  name: string;
+  pfp: string;
+  description: string;
+  commits: number;
+  files: number;
+  statsLoaded: boolean;
+}) {
+  const [fonts, logoSrc, wordmarkSrc, pfpSrc] = await Promise.all([
+    loadOgFonts(),
+    loadBrandSrc("logo.png"),
+    loadBrandSrc("wordmark.png"),
+    loadPfpData(share.pfp),
+  ]);
+  const letter = (share.name.trim() || share.uid).slice(0, 1).toUpperCase();
+  return new ImageResponse(
+    <RepoOgCard
+      uid={share.uid}
+      repo={share.repo}
+      description={share.description}
+      letter={letter}
+      pfpSrc={pfpSrc}
+      commits={share.commits}
+      files={share.files}
+      statsLoaded={share.statsLoaded}
+      logoSrc={logoSrc}
+      wordmarkSrc={wordmarkSrc}
+    />,
+    {
+      ...OG_SIZE,
+      fonts,
+    },
+  );
+}

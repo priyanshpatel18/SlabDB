@@ -11,6 +11,9 @@ import {
   isRepoName,
   isUserRepo,
   normalizeDescription,
+  normalizeWebsite,
+  parseAboutBody,
+  serializeAboutBody,
   sqlTable,
   utf8Bytes,
   type RepoFileRow,
@@ -64,6 +67,7 @@ export type RepoState = {
   files: RepoFileRow[];
   commits: CommitRecord[];
   description: string;
+  website: string;
 };
 
 function asFileRows(
@@ -82,9 +86,12 @@ function splitRepoRows(rows: RepoFileRow[]): RepoState {
   const metas: CommitRecord[] = [];
   const blobs = new Map<string, string>();
   let description = "";
+  let website = "";
   for (const row of rows) {
     if (row.path === ABOUT_PATH) {
-      description = normalizeDescription(row.body);
+      const about = parseAboutBody(row.body);
+      description = about.description;
+      website = about.website;
       continue;
     }
     const metaId = parseMetaPath(row.path);
@@ -116,7 +123,7 @@ function splitRepoRows(rows: RepoFileRow[]): RepoState {
       b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id)
   );
   files.sort((a, b) => a.path.localeCompare(b.path));
-  return { files, commits: metas, description };
+  return { files, commits: metas, description, website };
 }
 
 async function recordCommit(
@@ -591,19 +598,24 @@ export async function deleteFile(
 export async function saveDescription(
   session: ChainSession,
   repo: string,
-  raw: string,
+  raw: { description: string; website?: string },
   onStatus: StatusFn = () => {}
 ): Promise<RepoState> {
   const name = tableName(repo);
-  const next = normalizeDescription(raw);
+  const description = normalizeDescription(raw.description);
+  const website = (raw.website ?? "").trim()
+    ? normalizeWebsite(raw.website ?? "")
+    : "";
+  const next = serializeAboutBody({ description, website });
   return withTimeout(
     (async () => {
       const rows = await session.db.exec(
         `SELECT * FROM ${sqlTable(name)} WHERE path = $1`,
         [ABOUT_PATH]
       );
-      const prev = typeof rows[0]?.body === "string" ? rows[0].body : "";
-      if (prev === next) {
+      const prevBody = typeof rows[0]?.body === "string" ? rows[0].body : "";
+      const prev = parseAboutBody(prevBody);
+      if (prev.description === description && prev.website === website) {
         return listRepoState(session, name);
       }
       onStatus("Saving description");

@@ -143,8 +143,10 @@ export function RepoView({
               </div>
               <RepoAbout
                 description={access.description}
+                website={access.website}
+                readmeHref={readme ? "#readme" : undefined}
                 canEdit={access.own}
-                onSave={access.writeDescription}
+                onSave={access.writeAbout}
               />
             </div>
           ) : (

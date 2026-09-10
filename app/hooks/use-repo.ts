@@ -168,10 +168,11 @@ export type RepoAccess = UserCatalog & {
   files: RepoFileRow[];
   commits: CommitRecord[];
   description: string;
+  website: string;
   found: boolean;
   writeFile: (path: string, body: string, message: string) => Promise<void>;
   removeFile: (path: string, message: string) => Promise<void>;
-  writeDescription: (text: string) => Promise<void>;
+  writeAbout: (next: { description: string; website: string }) => Promise<void>;
   rename: (next: string) => Promise<string>;
   destroy: () => Promise<void>;
 };
@@ -184,6 +185,7 @@ export function useRepo(uid: string, repo: string): RepoAccess {
     files: RepoFileRow[];
     commits: CommitRecord[];
     description: string;
+    website: string;
     error: string | null;
   } | null>(null);
 
@@ -195,6 +197,7 @@ export function useRepo(uid: string, repo: string): RepoAccess {
   const files = pack?.key === key ? pack.files : [];
   const commits = pack?.key === key ? pack.commits : [];
   const description = pack?.key === key ? pack.description : "";
+  const website = pack?.key === key ? pack.website : "";
   const fileError = pack?.key === key ? pack.error : null;
 
   useEffect(() => {
@@ -212,6 +215,7 @@ export function useRepo(uid: string, repo: string): RepoAccess {
             files: state.files,
             commits: state.commits,
             description: state.description,
+            website: state.website,
             error: null,
           });
         }
@@ -223,6 +227,7 @@ export function useRepo(uid: string, repo: string): RepoAccess {
             files: [],
             commits: [],
             description: "",
+            website: "",
             error: err instanceof Error ? err.message : "Could not load files",
           });
         }
@@ -250,6 +255,7 @@ export function useRepo(uid: string, repo: string): RepoAccess {
         files: next.files,
         commits: next.commits,
         description: next.description,
+        website: next.website,
         error: null,
       });
       account.setHome({
@@ -278,23 +284,25 @@ export function useRepo(uid: string, repo: string): RepoAccess {
         files: next.files,
         commits: next.commits,
         description: next.description,
+        website: next.website,
         error: null,
       });
     },
     [account.home, catalog.own, repo, uid]
   );
 
-  const writeDescription = useCallback(
-    async (text: string) => {
+  const writeAbout = useCallback(
+    async (nextAbout: { description: string; website: string }) => {
       if (!catalog.own || !account.home) {
         throw new Error("Sign in as the owner to write");
       }
-      const next = await saveDescription(account.home.session, repo, text);
+      const next = await saveDescription(account.home.session, repo, nextAbout);
       setPack({
         key: `${account.home.session.slab}:${repo}`,
         files: next.files,
         commits: next.commits,
         description: next.description,
+        website: next.website,
         error: null,
       });
     },
@@ -329,12 +337,13 @@ export function useRepo(uid: string, repo: string): RepoAccess {
     files,
     commits,
     description,
+    website,
     found,
     loading: catalog.loading || filesLoading,
     error: fileError || catalog.error,
     writeFile,
     removeFile,
-    writeDescription,
+    writeAbout,
     rename,
     destroy,
   };

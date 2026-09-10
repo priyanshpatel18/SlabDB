@@ -3,6 +3,12 @@ import { isHistoryPath } from "@/lib/history";
 
 export const ABOUT_PATH = ".about";
 export const DESC_MAX = 200;
+export const WEBSITE_MAX = 255;
+
+export type RepoAboutData = {
+  description: string;
+  website: string;
+};
 
 export const MAX_FILE_PATH = 256;
 export const MAX_FILE_SEGMENTS = 16;
@@ -107,6 +113,77 @@ export function isHiddenPath(path: string): boolean {
 
 export function normalizeDescription(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().slice(0, DESC_MAX);
+}
+
+export function normalizeWebsite(raw: string): string {
+  const value = raw.trim();
+  if (!value) {
+    return "";
+  }
+  if (value.length > WEBSITE_MAX) {
+    throw new Error(`Website must be ${WEBSITE_MAX} characters or less`);
+  }
+  const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(withScheme);
+  } catch {
+    throw new Error("Website must be a valid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Website must use http or https");
+  }
+  if (!parsed.hostname) {
+    throw new Error("Website must be a valid URL");
+  }
+  return parsed.toString();
+}
+
+export function parseAboutBody(raw: string): RepoAboutData {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const row = JSON.parse(trimmed) as {
+        description?: unknown;
+        website?: unknown;
+      };
+      if (
+        row &&
+        typeof row === "object" &&
+        !Array.isArray(row) &&
+        ("description" in row || "website" in row) &&
+        (row.description === undefined || typeof row.description === "string") &&
+        (row.website === undefined || typeof row.website === "string")
+      ) {
+        return {
+          description: normalizeDescription(
+            typeof row.description === "string" ? row.description : ""
+          ),
+          website:
+            typeof row.website === "string" ? row.website.trim() : "",
+        };
+      }
+    } catch {
+      /* Plain text that looks like JSON. */
+    }
+  }
+  return { description: normalizeDescription(raw), website: "" };
+}
+
+export function serializeAboutBody(data: RepoAboutData): string {
+  const description = normalizeDescription(data.description);
+  const website = data.website.trim();
+  if (!description && !website) {
+    return "";
+  }
+  if (!website) {
+    return description;
+  }
+  return JSON.stringify({ description, website });
+}
+
+export function websiteLabel(href: string): string {
+  return href.replace(/^https?:\/\//i, "").replace(/\/$/, "");
 }
 
 export function settingsHref(uid: string, repo: string): string {

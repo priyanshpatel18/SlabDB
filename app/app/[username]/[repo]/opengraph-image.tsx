@@ -1,6 +1,12 @@
-import { OG_SIZE, OG_TYPE, renderOgImage } from "@/lib/og";
+import {
+  OG_SIZE,
+  OG_TYPE,
+  renderOgImage,
+  renderRepoOgImage,
+} from "@/lib/og";
 import { isReservedUsername } from "@/lib/cluster";
 import { parseRepoParam } from "@/lib/files";
+import { loadRepoShare } from "@/lib/repo-share";
 import {
   isUsernameFormat,
   normalizeUsername,
@@ -27,9 +33,18 @@ export default async function OpenGraphImage({
       footer: "MagicBlock ER  ·  Irys pages",
     });
   }
-  return renderOgImage({
-    kicker: `${uid} / ${repo}`,
-    title: `Files in ${repo}.`,
-    footer: "Onchain GitHub  ·  MagicBlock ER",
-  });
+  let share = null;
+  try {
+    share = await loadRepoShare(uid, repo);
+  } catch {
+    share = null;
+  }
+  if (!share) {
+    return renderOgImage({
+      kicker: `${uid} / ${repo}`,
+      title: `${uid}/${repo}`,
+      footer: "Onchain GitHub  ·  MagicBlock ER",
+    });
+  }
+  return renderRepoOgImage(share);
 }
