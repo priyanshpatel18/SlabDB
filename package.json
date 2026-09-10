@@ -4,6 +4,7 @@
   "packageManager": "bun@1.4.2",
   "workspaces": [
     "app",
+    "cli",
     "sdk"
   ],
   "scripts": {
@@ -12,6 +13,7 @@
     "lint:app": "bun run --cwd app lint",
     "build:sdk": "bun run --cwd sdk build",
     "build:app": "bun run build:sdk && bun run --cwd app build",
+    "slab": "bun cli/src/index.ts",
     "prepare": "husky"
   },
   "dependencies": {
