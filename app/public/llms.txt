@@ -14,10 +14,10 @@ Onchain GitHub. Profiles, repos, and README on a MagicBlock public Ephemeral Rol
 - [Home](/): product
 - [Console](/console): SQL workstation. Isolation is slab + wallet + ns.
 - [Docs](/docs): product docs
-- [Privacy Policy](/docs/privacy)
-- [Terms and Conditions](/docs/terms)
-- [Refund Policy](/docs/refunds)
-- [Cookie Policy](/docs/cookies)
+- [Privacy Policy](/privacy)
+- [Terms and Conditions](/terms)
+- [Refund Policy](/refunds)
+- [Cookie Policy](/cookies)
 
 ## Do not confuse with
 

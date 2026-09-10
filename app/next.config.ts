@@ -9,8 +9,20 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: slabRoot,
   outputFileTracingIncludes: {
     "/docs/**": ["../docs/**"],
+    "/privacy": ["../docs/privacy.md"],
+    "/terms": ["../docs/terms.md"],
+    "/refunds": ["../docs/refunds.md"],
+    "/cookies": ["../docs/cookies.md"],
   },
   turbopack: {},
+  async redirects() {
+    return [
+      { source: "/docs/privacy", destination: "/privacy", permanent: true },
+      { source: "/docs/terms", destination: "/terms", permanent: true },
+      { source: "/docs/refunds", destination: "/refunds", permanent: true },
+      { source: "/docs/cookies", destination: "/cookies", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

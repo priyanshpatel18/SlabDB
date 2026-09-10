@@ -25,6 +25,7 @@ import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { HOME_REPO, PROFILE_TABLE, USERS_TABLE, profilePath } from "@/lib/cluster";
 import { repoHref } from "@/lib/files";
 import { privyConfigured } from "@/lib/privy-config";
+import { isSignedOut } from "@/lib/wallet";
 
 export function HomeDashboard() {
   const wallet = useSlabWallet();
@@ -65,7 +66,7 @@ export function HomeDashboard() {
     return userRepos.filter((rel) => rel.name.includes(q));
   }, [userRepos, query]);
 
-  const signedOut = !wallet.connected;
+  const signedOut = isSignedOut(wallet);
 
   function repoItems() {
     if (filtered.length === 0) {

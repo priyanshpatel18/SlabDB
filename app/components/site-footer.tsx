@@ -4,10 +4,10 @@ import Link from "next/link";
 import { openConsentBanner } from "@/hooks/use-consent";
 
 const LINKS = [
-  { href: "/docs/privacy", label: "Privacy" },
-  { href: "/docs/terms", label: "Terms" },
-  { href: "/docs/refunds", label: "Refunds" },
-  { href: "/docs/cookies", label: "Cookies" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
+  { href: "/refunds", label: "Refunds" },
+  { href: "/cookies", label: "Cookies" },
 ] as const;
 
 export function SiteFooter() {

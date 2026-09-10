@@ -39,7 +39,7 @@ export function OnboardingDialog() {
   };
 
   return (
-    <Dialog open={locked} onOpenChange={() => {}}>
+    <Dialog open={locked} disablePointerDismissal onOpenChange={() => {}}>
         <DialogContent
         showCloseButton={false}
         className="max-h-[90dvh] overflow-y-auto sm:max-w-lg"

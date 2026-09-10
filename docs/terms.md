@@ -20,7 +20,7 @@ Username `new` and other reserved names are not available. You must not imperson
 
 ## Public data
 
-Everything you publish (profile, repos, files, commits) is public. Anyone can read Irys pages and rollup pointers. See the [Privacy Policy](/docs/privacy).
+Everything you publish (profile, repos, files, commits) is public. Anyone can read Irys pages and rollup pointers. See the [Privacy Policy](/privacy).
 
 You grant Slab a worldwide, non-exclusive licence to host, copy, and display that public content so the service can run.
 
@@ -39,7 +39,7 @@ We may hide, drop, or refuse content that breaks these rules. On-chain and Irys 
 
 ## No paid Slab product
 
-Slab does not sell subscriptions or file storage plans. Network fees (SOL, Irys) are paid to those networks, not to Slab as a refundable product fee. See the [Refund Policy](/docs/refunds).
+Slab does not sell subscriptions or file storage plans. Network fees (SOL, Irys) are paid to those networks, not to Slab as a refundable product fee. See the [Refund Policy](/refunds).
 
 ## CLI and API
 

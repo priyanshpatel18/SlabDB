@@ -26,6 +26,7 @@ import { shortAddr } from "@/lib/cluster";
 import { assertRepoName, createRepo } from "@/lib/home";
 import { DESC_MAX, repoHref } from "@/lib/files";
 import { privyConfigured } from "@/lib/privy-config";
+import { isSessionPending, isSignedOut } from "@/lib/wallet";
 
 export function NewRepo() {
   const router = useRouter();
@@ -64,7 +65,8 @@ export function NewRepo() {
   }, [name, taken]);
 
   const owner = account.profile?.uid || (wallet.address ? shortAddr(wallet.address) : "");
-  const signedOut = !wallet.connected;
+  const signedOut = isSignedOut(wallet);
+  const pending = isSessionPending(wallet);
   const canCreate =
     Boolean(home && wallet.address) &&
     !account.busy &&
@@ -126,7 +128,15 @@ export function NewRepo() {
           </Alert>
         ) : null}
 
-        {signedOut ? (
+        {pending ? (
+          <div className="mt-8 flex flex-col gap-3" aria-busy="true">
+            <Skeleton className="h-11 w-full motion-reduce:animate-none" />
+            <Skeleton className="h-24 w-full motion-reduce:animate-none" />
+            <Skeleton className="h-11 w-40 motion-reduce:animate-none" />
+          </div>
+        ) : null}
+
+        {!pending && signedOut ? (
           <Empty className="mt-8 border border-dashed border-border py-12">
             <EmptyHeader>
               <EmptyTitle>Sign in to create a repository</EmptyTitle>
@@ -157,7 +167,7 @@ export function NewRepo() {
           </Empty>
         ) : null}
 
-        {!signedOut && !home && account.busy ? (
+        {!pending && !signedOut && !home && account.busy ? (
           <div className="mt-8 flex flex-col gap-3" aria-busy="true">
             <Skeleton className="h-11 w-full motion-reduce:animate-none" />
             <Skeleton className="h-24 w-full motion-reduce:animate-none" />
@@ -165,13 +175,13 @@ export function NewRepo() {
           </div>
         ) : null}
 
-        {!signedOut && !home && !account.busy && !account.error ? (
+        {!pending && !signedOut && !home && !account.busy && !account.error ? (
           <p className="mt-8 text-sm text-muted-foreground">
-            Fund this wallet with SOL to create a repository.
+            Fund this wallet with at least 1.5 SOL to create a repository.
           </p>
         ) : null}
 
-        {!signedOut && home ? (
+        {!pending && !signedOut && home ? (
           <form
             className="mt-8 flex flex-col gap-6"
             onSubmit={(event) => {

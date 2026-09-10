@@ -31,6 +31,16 @@ export type SlabWallet = {
   signMessage: SlabSigner["signMessage"];
 };
 
+// True while Privy is restoring a session. Do not render signed-out chrome.
+export function isSessionPending(wallet: SlabWallet): boolean {
+  return !wallet.ready || (wallet.authenticated && !wallet.connected);
+}
+
+// True only after Privy has settled and there is no session.
+export function isSignedOut(wallet: SlabWallet): boolean {
+  return wallet.ready && !wallet.connected && !wallet.authenticated;
+}
+
 export function isVersionedTx(tx: SlabTx): tx is VersionedTransaction {
   return "version" in tx;
 }

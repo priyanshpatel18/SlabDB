@@ -142,14 +142,14 @@ export function Console() {
   const [granteeText, setGranteeText] = useState("");
   const [boundId, setBoundId] = useState(signerId);
 
-  if (signerId !== boundId) {
+  if (signerId && signerId !== boundId) {
     setBoundId(signerId);
     setSession(null);
     setBootError(null);
     setResult({ rows: [], message: "" });
     setError(null);
     setActive(null);
-    setBooting(Boolean(signerId));
+    setBooting(true);
   }
 
   useEffect(() => {
@@ -428,7 +428,7 @@ export function Console() {
               Docs
             </Link>
             <Link
-              href="/docs/privacy"
+              href="/privacy"
               className="text-sm text-muted-foreground hover:text-foreground md:hidden"
             >
               Privacy

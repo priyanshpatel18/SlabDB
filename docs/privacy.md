@@ -46,7 +46,7 @@ Do not put secrets, private keys, or personal data you need to keep private in a
 **Technical**
 
 - Server logs that your host may keep (IP, user agent, request path) to operate the site.
-- Necessary cookies and storage for sign-in. See the [Cookie Policy](/docs/cookies).
+- Necessary cookies and storage for sign-in. See the [Cookie Policy](/cookies).
 
 We do not ask for payment card data. Slab does not charge a product fee.
 
@@ -74,7 +74,7 @@ Do not claim private SQL, private rows, or private notebooks while pages are pla
 
 ## Cookies and tracking
 
-Necessary cookies and storage run sign-in. Analytics and advertising do not run unless you allow them in the cookie banner. Details: [Cookie Policy](/docs/cookies).
+Necessary cookies and storage run sign-in. Analytics and advertising do not run unless you allow them in the cookie banner. Details: [Cookie Policy](/cookies).
 
 ## Legal bases (EEA / UK)
 

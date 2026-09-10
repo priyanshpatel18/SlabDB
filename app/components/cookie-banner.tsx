@@ -45,11 +45,11 @@ export function CookieBanner() {
           <p id="slab-cookie-copy" className="mt-1 text-sm leading-relaxed text-foreground">
             Necessary cookies run Privy sign-in. Analytics stay off unless you
             allow them.{" "}
-            <Link href="/docs/cookies" className="text-kiln underline underline-offset-4 hover:text-foreground">
+            <Link href="/cookies" className="text-kiln underline underline-offset-4 hover:text-foreground">
               Cookie Policy
             </Link>
             {" · "}
-            <Link href="/docs/privacy" className="text-kiln underline underline-offset-4 hover:text-foreground">
+            <Link href="/privacy" className="text-kiln underline underline-offset-4 hover:text-foreground">
               Privacy
             </Link>
           </p>

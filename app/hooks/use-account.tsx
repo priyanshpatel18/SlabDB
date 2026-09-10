@@ -23,6 +23,7 @@ import {
 } from "@/lib/profile";
 import { readProfileCache, writeProfileCache, writeReadmeCache } from "@/lib/profile-cache";
 import { claimUsername } from "@/lib/username";
+import { isAccountFunded } from "@/lib/account-fund";
 import { loadSolLamports } from "@/lib/wallet-holdings";
 
 function asSigner(
@@ -50,6 +51,7 @@ type AccountValue = {
   status: string;
   error: string | null;
   retry: () => void;
+  refreshSol: () => void;
   save: (draft: ProfileDraft) => Promise<void>;
   commitReadme: (body: string) => Promise<void>;
 };
@@ -72,10 +74,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [bootKey, setBootKey] = useState(0);
   const [boundId, setBoundId] = useState(signerId);
 
-  if (signerId !== boundId) {
+  if (signerId && signerId !== boundId) {
     setBoundId(signerId);
     setHome(null);
-    setProfile(signerId ? readProfileCache(signerId) : null);
+    setProfile(readProfileCache(signerId));
     setSolLamports(null);
     setStatus("");
     setError(null);
@@ -109,7 +111,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     };
   }, [signerId]);
 
-  const funded = (solLamports ?? 0) > 0;
+  const funded = isAccountFunded(solLamports);
 
   useEffect(() => {
     if (!signer || !funded) {
@@ -175,6 +177,16 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setBootKey((n) => n + 1);
   }, [signerId]);
 
+  const refreshSol = useCallback(() => {
+    if (!signerId) {
+      return;
+    }
+    void loadSolLamports(signerId).then(
+      (lamports) => setSolLamports(lamports),
+      () => setSolLamports(0)
+    );
+  }, [signerId]);
+
   const save = useCallback(
     async (draft: ProfileDraft) => {
       if (!signer || !home) {
@@ -218,6 +230,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       status,
       error,
       retry,
+      refreshSol,
       save,
       commitReadme,
     }),
@@ -228,6 +241,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       funded,
       home,
       profile,
+      refreshSol,
       retry,
       save,
       signer,

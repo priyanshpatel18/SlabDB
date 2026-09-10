@@ -135,7 +135,21 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
   }, [wallets]);
 
   const account = useMemo(() => embeddedAccount(user), [user]);
-  const address = solana?.address ?? account?.address ?? null;
+  const liveAddress = solana?.address ?? account?.address ?? null;
+  const settled = ready && walletsReady;
+  const [stickyAddress, setStickyAddress] = useState<string | null>(null);
+
+  const keepSticky = !(settled && !authenticated);
+
+  if (keepSticky) {
+    if (liveAddress && liveAddress !== stickyAddress) {
+      setStickyAddress(liveAddress);
+    }
+  } else if (stickyAddress) {
+    setStickyAddress(null);
+  }
+
+  const address = liveAddress ?? (keepSticky ? stickyAddress : null);
   const publicKey = useMemo(() => {
     if (!address) return null;
     try {
@@ -234,19 +248,24 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
     toast.success("Agent signer is on this wallet");
   }, [addSigners, address]);
 
+  const logOut = useCallback(async () => {
+    setStickyAddress(null);
+    await logout();
+  }, [logout]);
+
   const value = useMemo<SlabWallet>(() => {
     return {
-      ready: ready && walletsReady,
-      connected: Boolean(authenticated && publicKey),
-      connecting: !ready,
-      authenticated,
-      publicKey: publicKey,
+      ready: settled,
+      connected: Boolean(publicKey && (authenticated || Boolean(stickyAddress))),
+      connecting: !settled || (authenticated && !publicKey),
+      authenticated: authenticated || Boolean(stickyAddress && !settled),
+      publicKey,
       address,
       walletId,
       agentEnabled,
       agentAvailable,
       login: () => login(),
-      logout,
+      logout: logOut,
       enableAgent,
       signTransaction,
       signAllTransactions,
@@ -258,15 +277,15 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
     agentEnabled,
     authenticated,
     enableAgent,
+    logOut,
     login,
-    logout,
     publicKey,
-    ready,
+    settled,
     signAllTransactions,
     signMessage,
     signTransaction,
+    stickyAddress,
     walletId,
-    walletsReady,
   ]);
 
   return (
@@ -279,7 +298,13 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
 export function SlabWalletProvider({ children }: { children: ReactNode }) {
   if (!privyConfigured()) {
     return (
-      <SlabWalletContext.Provider value={empty}>
+      <SlabWalletContext.Provider
+        value={{
+          ...empty,
+          ready: true,
+          connecting: false,
+        }}
+      >
         {children}
       </SlabWalletContext.Provider>
     );

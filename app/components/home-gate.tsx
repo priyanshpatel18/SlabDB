@@ -4,6 +4,8 @@ import { HomeDashboard } from "@/components/home-dashboard";
 import { SiteHeader } from "@/components/site-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
+import { privyConfigured } from "@/lib/privy-config";
+import { isSessionPending } from "@/lib/wallet";
 
 function HomeBoot() {
   return (
@@ -27,7 +29,7 @@ function HomeBoot() {
 export function HomeGate() {
   const wallet = useSlabWallet();
 
-  if (wallet.authenticated && (!wallet.ready || !wallet.connected)) {
+  if (privyConfigured() && isSessionPending(wallet) && !wallet.connected) {
     return <HomeBoot />;
   }
   return <HomeDashboard />;

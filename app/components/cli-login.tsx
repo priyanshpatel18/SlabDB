@@ -6,6 +6,7 @@ import { getAccessToken } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { privyConfigured } from "@/lib/privy-config";
+import { isSessionPending } from "@/lib/wallet";
 
 function callbackUrl(port: number): string {
   return `http://127.0.0.1:${port}/callback`;
@@ -94,7 +95,9 @@ export function CliLogin() {
           Open this page from <span className="font-mono">slab login</span>.
         </p>
       ) : null}
-      {!wallet.connected ? (
+      {!wallet.connected && isSessionPending(wallet) ? (
+        <p className="text-sm text-muted-foreground">Restoring session</p>
+      ) : !wallet.connected ? (
         <Button
           type="button"
           className="min-h-10 w-fit"

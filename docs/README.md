@@ -28,11 +28,4 @@ Catalog isolation is `[slab, owner, ns]`. Each app can share one schema: the own
 
 ## Privacy
 
-Irys pages are plaintext. A later Private ER would hide catalog and indexes only. See [Privacy](privacy.md).
-
-## Next
-
-- [Install the SDK](sdk.md)
-- [v0 SQL](sql.md)
-- [Privacy](privacy.md)
-- [AI Dev Skill](skill.md)
+Irys pages are plaintext. A later Private ER would hide catalog and indexes only. See [Privacy](/privacy).

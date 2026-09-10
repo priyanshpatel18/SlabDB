@@ -24,7 +24,7 @@ export function PublicDataConsent({
       <span className="text-sm leading-relaxed text-foreground">
         I understand this is public on Irys and I agree to the{" "}
         <Link
-          href="/docs/privacy"
+          href="/privacy"
           className="text-kiln underline underline-offset-4 hover:text-foreground"
           onClick={(event) => event.stopPropagation()}
         >
@@ -32,7 +32,7 @@ export function PublicDataConsent({
         </Link>{" "}
         and{" "}
         <Link
-          href="/docs/terms"
+          href="/terms"
           className="text-kiln underline underline-offset-4 hover:text-foreground"
           onClick={(event) => event.stopPropagation()}
         >

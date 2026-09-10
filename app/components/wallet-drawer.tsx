@@ -39,7 +39,7 @@ export function WalletDrawer() {
   return (
     <div className="flex min-w-0 items-center gap-3">
       <p className="shrink-0 font-mono text-sm tabular-nums text-muted-foreground">
-        {sol == null ? "—" : `${formatSol(sol)} SOL`}
+        {sol == null ? "..." : `${formatSol(sol)} SOL`}
       </p>
       <DropdownMenu>
         <DropdownMenuTrigger

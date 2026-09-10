@@ -11,11 +11,14 @@ export function GET() {
 - [Overview](${absoluteUrl("/docs")})
 - [SDK](${absoluteUrl("/docs/sdk")})
 - [SQL](${absoluteUrl("/docs/sql")})
-- [Privacy](${absoluteUrl("/docs/privacy")})
-- [Terms](${absoluteUrl("/docs/terms")})
-- [Refunds](${absoluteUrl("/docs/refunds")})
-- [Cookies](${absoluteUrl("/docs/cookies")})
 - [AI Dev Skill](${absoluteUrl("/docs/skill")})
+
+## Legal
+
+- [Privacy](${absoluteUrl("/privacy")})
+- [Terms](${absoluteUrl("/terms")})
+- [Refunds](${absoluteUrl("/refunds")})
+- [Cookies](${absoluteUrl("/cookies")})
 
 ## Skill
 

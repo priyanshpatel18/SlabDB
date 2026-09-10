@@ -2,7 +2,7 @@
 
 Last updated: 10 September 2026.
 
-This page describes cookies and similar storage on **Slab** (`https://slab.priyanshpatel.com`). Related: [Privacy Policy](/docs/privacy).
+This page describes cookies and similar storage on **Slab** (`https://slab.priyanshpatel.com`). Related: [Privacy Policy](/privacy).
 
 You can change your choice at any time with **Cookie settings** in the footer or the banner.
 
@@ -10,9 +10,9 @@ You can change your choice at any time with **Cookie settings** in the footer or
 
 Slab uses cookies and web storage for three jobs:
 
-1. **Necessary** — sign-in and security. These run so the site can work.
-2. **Preferences** — your cookie choice, stored in `localStorage` as `slab-consent-v1`.
-3. **Analytics** — measurement. These do **not** load unless you allow analytics.
+1. **Necessary:** sign-in and security. These run so the site can work.
+2. **Preferences:** your cookie choice, stored in `localStorage` as `slab-consent-v1`.
+3. **Analytics:** measurement. These do **not** load unless you allow analytics.
 
 Slab does not use advertising cookies today. If that changes, they will stay off until you allow them.
 
