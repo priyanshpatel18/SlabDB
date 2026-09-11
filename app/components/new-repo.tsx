@@ -28,6 +28,7 @@ import { assertRepoName, createRepo } from "@/lib/home";
 import { DESC_MAX, repoHref } from "@/lib/files";
 import { privyConfigured } from "@/lib/privy-config";
 import { isSessionPending, isSignedOut } from "@/lib/wallet";
+import { MIN_ACCOUNT_SOL } from "@/lib/account-fund";
 
 export function NewRepo() {
   const router = useRouter();
@@ -178,7 +179,8 @@ export function NewRepo() {
 
         {!pending && !signedOut && !home && !account.busy && !account.error ? (
           <p className="mt-8 text-sm text-muted-foreground">
-            Fund this wallet with at least 1.5 SOL to create a repository.
+            Fund this wallet with at least {MIN_ACCOUNT_SOL} SOL before Slab
+            creates your account. After that, this check goes away.
           </p>
         ) : null}
 

@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -112,12 +113,26 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [signerId]);
 
   const funded = isAccountFunded(solLamports);
+  const solRef = useRef(solLamports);
+  const homeRef = useRef(home);
 
   useEffect(() => {
-    if (!signer || !funded) {
+    solRef.current = solLamports;
+  }, [solLamports]);
+
+  useEffect(() => {
+    homeRef.current = home;
+  }, [home]);
+
+  useEffect(() => {
+    if (!signer) {
+      return;
+    }
+    if (homeRef.current) {
       return;
     }
     let cancelled = false;
+    setBusy(true);
     void (async () => {
       try {
         const next = await openHome(signer, (msg) => {
@@ -157,6 +172,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         }
         setHome(null);
         setProfile(readProfileCache(signerId));
+        if (!isAccountFunded(solRef.current)) {
+          setError(null);
+          setStatus("");
+          return;
+        }
         setError(err instanceof Error ? err.message : "Could not open home");
       } finally {
         if (!cancelled) {
@@ -167,7 +187,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [signer, signerId, funded, bootKey]);
+  }, [signer, signerId, bootKey, funded]);
 
   const retry = useCallback(() => {
     setHome(null);
@@ -226,7 +246,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       profile,
       solLamports,
       funded,
-      busy: Boolean(signer) && funded && !home && !error ? true : busy,
+      busy: Boolean(signer) && !home && !error && funded ? true : busy,
       status,
       error,
       retry,

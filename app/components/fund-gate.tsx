@@ -13,6 +13,7 @@ import {
 import { CLUSTER, SOL_FAUCET_URL, shortAddr } from "@/lib/cluster";
 import {
   MIN_ACCOUNT_SOL,
+  needsCreateFund,
   remainingAccountSol,
 } from "@/lib/account-fund";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
@@ -28,8 +29,12 @@ function copyText(value: string) {
 
 export function FundGate({ children }: { children: React.ReactNode }) {
   const wallet = useSlabWallet();
-  const { solLamports, funded, refreshSol } = useAccount();
-  const locked = Boolean(wallet.connected && solLamports != null && !funded);
+  const { solLamports, home, profile, busy, refreshSol } = useAccount();
+  const locked = Boolean(
+    wallet.connected &&
+      !busy &&
+      needsCreateFund(solLamports, Boolean(home) || Boolean(profile?.uid))
+  );
   const sol = solAmount(solLamports);
   const address = wallet.address;
   const stillNeed = remainingAccountSol(solLamports);
@@ -59,9 +64,10 @@ export function FundGate({ children }: { children: React.ReactNode }) {
             <DialogTitle>Add {MIN_ACCOUNT_SOL} SOL to continue</DialogTitle>
             <DialogDescription>
               You signed in, so Slab created an embedded Solana wallet. You must
-              send at least {MIN_ACCOUNT_SOL} SOL to that wallet before you can
-              create a profile or a repository. This SOL pays Solana and Irys
-              network fees. Slab does not take it as a product fee.
+              send at least {MIN_ACCOUNT_SOL} SOL to that wallet before Slab
+              creates your on-chain account. After that, this check goes away.
+              This SOL pays Solana and Irys network fees. Slab does not take it
+              as a product fee.
             </DialogDescription>
           </DialogHeader>
           {address ? (

@@ -9,3 +9,5 @@ test-ledger
 .env
 dist
 .slab
+# Added by code-review-graph
+.code-review-graph/

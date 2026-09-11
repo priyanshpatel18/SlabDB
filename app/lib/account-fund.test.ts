@@ -3,11 +3,12 @@ import {
   MIN_ACCOUNT_LAMPORTS,
   MIN_ACCOUNT_SOL,
   isAccountFunded,
+  needsCreateFund,
   remainingAccountSol,
 } from "@/lib/account-fund";
 
 describe("isAccountFunded", () => {
-  test("is false until the wallet holds 1.5 SOL", () => {
+  test("is false until the wallet holds 2 SOL", () => {
     expect(isAccountFunded(null)).toBe(false);
     expect(isAccountFunded(0)).toBe(false);
     expect(isAccountFunded(1_000_000_000)).toBe(false);
@@ -21,7 +22,20 @@ describe("remainingAccountSol", () => {
   test("returns the SOL still required", () => {
     expect(remainingAccountSol(null)).toBe(MIN_ACCOUNT_SOL);
     expect(remainingAccountSol(0)).toBe(MIN_ACCOUNT_SOL);
-    expect(remainingAccountSol(1_000_000_000)).toBe(0.5);
+    expect(remainingAccountSol(1_000_000_000)).toBe(1);
     expect(remainingAccountSol(MIN_ACCOUNT_LAMPORTS)).toBe(0);
+  });
+});
+
+describe("needsCreateFund", () => {
+  test("is off after home exists even if the balance dropped", () => {
+    expect(needsCreateFund(1_117_900_000, true)).toBe(false);
+    expect(needsCreateFund(0, true)).toBe(false);
+  });
+
+  test("is on only before home exists and the wallet is under 2 SOL", () => {
+    expect(needsCreateFund(null, false)).toBe(false);
+    expect(needsCreateFund(1_117_900_000, false)).toBe(true);
+    expect(needsCreateFund(MIN_ACCOUNT_LAMPORTS, false)).toBe(false);
   });
 });

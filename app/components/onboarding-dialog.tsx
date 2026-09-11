@@ -17,12 +17,12 @@ import { emptyProfile, type ProfileDraft } from "@/lib/profile";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 
 export function OnboardingDialog() {
-  const { home, profile, funded, save, status } = useAccount();
+  const { home, profile, save, status } = useAccount();
   const wallet = useSlabWallet();
   const [draft, setDraft] = useState<ProfileDraft>(() => emptyProfile());
   const [busy, setBusy] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const locked = Boolean(funded && home && !profile);
+  const locked = Boolean(home && !profile);
 
   const onSave = () => {
     if (!agreed) {
