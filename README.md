@@ -39,7 +39,7 @@ bun src/index.ts commit -m "Initial commit"
 bun src/index.ts push
 ```
 
-See `cli/README.md`. CLI push also needs an Irys payer on the app server (`IRYS_SECRET_KEY` or `ANCHOR_WALLET`).
+See `cli/README.md`. CLI push signs Irys uploads with the same Privy wallet as the site.
 
 ## v0 SQL
 

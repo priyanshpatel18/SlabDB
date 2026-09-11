@@ -92,10 +92,9 @@ describe("GET /api/cli/me", () => {
 });
 
 describe("POST /api/cli/push", () => {
-  test("returns 503 when the server is not ready", async () => {
+  test("returns 503 when Privy is not configured", async () => {
     const res = await handleCliPush(jsonReq("http://slab.test/api/cli/push", validPush), {
-      privyReady: () => true,
-      irysReady: () => false,
+      privyReady: () => false,
       identity: async () => identity,
       assertOwns: async () => identity.profile,
       applyPush: async () => ({ wrote: 1, id: "deadbeef" }),
@@ -115,7 +114,6 @@ describe("POST /api/cli/push", () => {
       }),
       {
         privyReady: () => true,
-        irysReady: () => true,
         identity: async () => identity,
         assertOwns: async () => identity.profile,
         applyPush: async () => ({ wrote: 1, id: "deadbeef" }),
@@ -132,7 +130,6 @@ describe("POST /api/cli/push", () => {
       jsonReq("http://slab.test/api/cli/push", { uid: "ada" }),
       {
         privyReady: () => true,
-        irysReady: () => true,
         identity: async () => identity,
         assertOwns: async () => identity.profile,
         applyPush: async () => ({ wrote: 1, id: "deadbeef" }),
@@ -146,7 +143,6 @@ describe("POST /api/cli/push", () => {
       jsonReq("http://slab.test/api/cli/push", { ...validPush, uid: "bob" }),
       {
         privyReady: () => true,
-        irysReady: () => true,
         identity: async () => identity,
         assertOwns: async () => identity.profile,
         applyPush: async () => ({ wrote: 1, id: "deadbeef" }),
@@ -167,7 +163,6 @@ describe("POST /api/cli/push", () => {
       }),
       {
         privyReady: () => true,
-        irysReady: () => true,
         identity: async () => identity,
         assertOwns: async () => identity.profile,
         applyPush: async (opts) => {

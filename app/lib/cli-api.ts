@@ -12,7 +12,6 @@ export type CliMeDeps = {
 
 export type CliPushDeps = {
   privyReady: () => boolean;
-  irysReady: () => boolean;
   identity: (req: Request) => Promise<CliIdentity>;
   assertOwns: (identity: CliIdentity, uid: string) => Promise<unknown>;
   applyPush: (opts: {
@@ -56,7 +55,7 @@ export async function handleCliPush(
   req: Request,
   deps: CliPushDeps
 ): Promise<NextResponse> {
-  if (!deps.privyReady() || !deps.irysReady()) {
+  if (!deps.privyReady()) {
     return NextResponse.json(
       { error: "CLI push is not configured on the server" },
       { status: 503 }

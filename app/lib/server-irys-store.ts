@@ -1,6 +1,3 @@
-import { homedir } from "node:os";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   PAGE_BYTES,
   PageCache,
@@ -8,64 +5,49 @@ import {
   encodeIrysTxid,
   isLegacyLocalPageId,
   isIrysUnpaid,
+  sendIrysFund,
   sha256,
   type IrysFunder,
   type PageStore,
+  type SlabWallet,
   type UploadedPage,
 } from "slabdb";
 import { IRYS_GATEWAY, IRYS_RPC_URL } from "@/lib/cluster";
 
-let irysHold: Promise<IrysFunder> | null = null;
+const PAGE_TAGS = [
+  { name: "Content-Type", value: "application/octet-stream" },
+  { name: "App-Name", value: "Slab" },
+];
 
-function loadSecretKey(): Uint8Array {
-  const raw = process.env.IRYS_SECRET_KEY?.trim();
-  if (raw) {
-    if (raw.startsWith("[")) {
-      return Uint8Array.from(JSON.parse(raw) as number[]);
-    }
-    throw new Error("IRYS_SECRET_KEY must be a JSON byte array");
-  }
-  const path =
-    process.env.ANCHOR_WALLET || join(homedir(), ".config/solana/id.json");
-  const parsed = JSON.parse(
-    readFileSync(/*turbopackIgnore: true*/ path, "utf8")
-  ) as number[];
-  return Uint8Array.from(parsed);
-}
+let irysHold: { key: string; client: Promise<IrysFunder> } | null = null;
 
 function gatewayUrl(id: string): string {
   return `${IRYS_GATEWAY.replace(/\/$/, "")}/${id}`;
 }
 
-async function irysClient(): Promise<IrysFunder> {
-  if (irysHold) {
-    return irysHold;
+async function irysClient(wallet: SlabWallet): Promise<IrysFunder> {
+  const key = wallet.publicKey.toBase58();
+  if (irysHold?.key === key) {
+    return irysHold.client;
   }
-  irysHold = (async () => {
-    const { Uploader } = await import("@irys/upload");
-    const { Solana } = await import("@irys/upload-solana");
-    return (await Uploader(Solana)
-      .withWallet(loadSecretKey())
+  const client = (async () => {
+    const { WebUploader } = await import("@irys/web-upload");
+    const { WebSolana } = await import("@irys/web-upload-solana");
+    return (await WebUploader(WebSolana)
+      .withProvider(wallet as never)
       .withRpc(process.env.IRYS_RPC_URL || IRYS_RPC_URL)
       .withTokenOptions({ finality: "confirmed" })
+      .timeout(60_000)
       .devnet()) as unknown as IrysFunder;
   })();
-  return irysHold;
-}
-
-export function irysStoreReady(): boolean {
-  try {
-    loadSecretKey();
-    return true;
-  } catch {
-    return false;
-  }
+  irysHold = { key, client };
+  return client;
 }
 
 export class ServerIrysStore implements PageStore {
   private readonly cache: PageCache;
 
-  constructor() {
+  constructor(private readonly wallet: SlabWallet) {
     this.cache = new PageCache();
   }
 
@@ -73,26 +55,26 @@ export class ServerIrysStore implements PageStore {
     if (page.length !== PAGE_BYTES) {
       throw new Error(`page must be ${PAGE_BYTES} bytes`);
     }
-    const irys = await irysClient();
+    const irys = await irysClient(this.wallet);
     let receipt: { id?: string };
     try {
-      receipt = await irys.upload(page, {
-        tags: [
-          { name: "Content-Type", value: "application/octet-stream" },
-          { name: "App-Name", value: "Slab" },
-        ],
-      });
+      receipt = await irys.upload(page, { tags: PAGE_TAGS });
     } catch (err) {
       if (!isIrysUnpaid(err)) {
         throw err;
       }
-      await irys.fund(irys.utils.toAtomic(0.05).toString(), 1.2);
-      receipt = await irys.upload(page, {
-        tags: [
-          { name: "Content-Type", value: "application/octet-stream" },
-          { name: "App-Name", value: "Slab" },
-        ],
+      await sendIrysFund({
+        irys,
+        wallet: {
+          publicKey: this.wallet.publicKey,
+          signTransaction: async (tx) => {
+            const signed = await this.wallet.signTransaction(tx);
+            return signed as typeof tx;
+          },
+        },
+        rpcUrl: process.env.IRYS_RPC_URL || IRYS_RPC_URL,
       });
+      receipt = await irys.upload(page, { tags: PAGE_TAGS });
     }
     if (!receipt?.id) {
       throw new Error("Irys upload returned no id");

@@ -112,7 +112,7 @@ export async function applyCliPush(opts: {
     ns: HOME_NS,
     owner: new PublicKey(opts.wallet),
     autoDelegate: true,
-    store: new ServerIrysStore(),
+    store: new ServerIrysStore(privySlabWallet(opts.walletId, opts.wallet)),
   });
   await ensureRepo(client, opts.repo);
   const rows = await client.exec(
