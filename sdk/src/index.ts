@@ -11,7 +11,12 @@ export {
 export { connect } from "./connect";
 export type { ConnectOpts, SlabClient, SlabWallet } from "./connect";
 export { ErProvider } from "./er-provider";
-export { resolveErTarget } from "./er-target";
+export {
+  pickErUrl,
+  resolveErTarget,
+  resolveErTargetForSlab,
+  slabPdaFor,
+} from "./er-target";
 export type { ErTarget } from "./er-target";
 export { SlabDb } from "./db";
 export type { Remaining, SlabDbOpts } from "./db";
@@ -29,7 +34,11 @@ export type {
   ParsedSql,
   ParsedUpdate,
 } from "./sql";
-export { formatProgramError, isGrantDenied, isAlreadyPrepared } from "./tx-error";
+export {
+  formatProgramError,
+  isGrantDenied,
+  isAlreadyPrepared,
+} from "./tx-error";
 export { bindSql } from "./params";
 export { MemoryPageStore, PageCache } from "./store";
 export type { PageStore, UploadedPage } from "./store";

@@ -25,7 +25,12 @@ import {
   withLiveFlag,
 } from "./page";
 import { writeU32LE } from "./bytes";
-import { createTableSql, dropTableSql, isLegacyLocalPageId, UnreadablePageError } from "./recovery";
+import {
+  createTableSql,
+  dropTableSql,
+  isLegacyLocalPageId,
+  UnreadablePageError,
+} from "./recovery";
 import { parseSql } from "./sql";
 import { formatProgramError, isAlreadyPrepared } from "./tx-error";
 import type { PageStore } from "./store";
@@ -64,7 +69,9 @@ const delegateCuIx = () =>
   ComputeBudgetProgram.setComputeUnitLimit({ units: DELEGATE_CU });
 
 async function waitOwner(
-  connection: { getAccountInfo: (key: PublicKey) => Promise<{ owner: PublicKey } | null> },
+  connection: {
+    getAccountInfo: (key: PublicKey) => Promise<{ owner: PublicKey } | null>;
+  },
   pubkey: PublicKey,
   owner: PublicKey,
   timeoutMs = 1200
@@ -88,7 +95,12 @@ function valuesEqual(a: SqlValue, b: SqlValue): boolean {
     }
     return Buffer.from(aa).equals(Buffer.from(bb));
   }
-  if (a !== null && b !== null && typeof a === "object" && typeof b === "object") {
+  if (
+    a !== null &&
+    b !== null &&
+    typeof a === "object" &&
+    typeof b === "object"
+  ) {
     return JSON.stringify(a) === JSON.stringify(b);
   }
   try {
@@ -229,7 +241,8 @@ export class SlabDb {
   }
 
   private async rpcOpts(): Promise<
-    { skipPreflight: true; commitment: "processed" } | { commitment: "confirmed" }
+    | { skipPreflight: true; commitment: "processed" }
+    | { commitment: "confirmed" }
   > {
     if (await this.isDelegated()) {
       return { skipPreflight: true, commitment: "processed" };
@@ -414,7 +427,9 @@ export class SlabDb {
     }
   }
 
-  async resetTable(name: string): Promise<{ dropSql: string; createSql: string }> {
+  async resetTable(
+    name: string
+  ): Promise<{ dropSql: string; createSql: string }> {
     const rel = await this.relByName(name);
     const createSql = createTableSql(rel);
     const dropSql = dropTableSql(name);
@@ -433,7 +448,9 @@ export class SlabDb {
       return this.catalogSnap;
     }
     const reader = await this.reader();
-    const info = await reader.provider.connection.getAccountInfo(this.catalogPda);
+    const info = await reader.provider.connection.getAccountInfo(
+      this.catalogPda
+    );
     if (!info) {
       throw new Error("catalog does not exist");
     }
@@ -510,7 +527,10 @@ export class SlabDb {
     }
   }
 
-  private async maybeDelegateIndex(relOid: number, pkAttr: number): Promise<void> {
+  private async maybeDelegateIndex(
+    relOid: number,
+    pkAttr: number
+  ): Promise<void> {
     if (!(await this.isDelegated())) {
       return;
     }
@@ -529,10 +549,17 @@ export class SlabDb {
       .remainingAccounts(this.remainingAccounts)
       .preInstructions([delegateCuIx()])
       .rpc();
-    await waitOwner(this.program.provider.connection, index, DELEGATION_PROGRAM_ID);
+    await waitOwner(
+      this.program.provider.connection,
+      index,
+      DELEGATION_PROGRAM_ID
+    );
   }
 
-  private async maybeDelegatePage(relOid: number, pageNo: number): Promise<void> {
+  private async maybeDelegatePage(
+    relOid: number,
+    pageNo: number
+  ): Promise<void> {
     if (!(await this.isDelegated())) {
       return;
     }
@@ -551,7 +578,11 @@ export class SlabDb {
       .remainingAccounts(this.remainingAccounts)
       .preInstructions([delegateCuIx()])
       .rpc();
-    await waitOwner(this.program.provider.connection, pagePtr, DELEGATION_PROGRAM_ID);
+    await waitOwner(
+      this.program.provider.connection,
+      pagePtr,
+      DELEGATION_PROGRAM_ID
+    );
   }
 
   async createTable(
@@ -590,6 +621,7 @@ export class SlabDb {
         catalog: this.catalogPda,
         index: this.indexPda(relOid, pkAttr),
       })
+      .remainingAccounts(this.writerRemaining())
       .rpc(await this.rpcOpts());
     this.invalidateCatalog();
   }
@@ -605,8 +637,11 @@ export class SlabDb {
     const rel = await this.relByName(table);
     const names = columnNames ?? rel.columns.map((c) => c.name);
     const pkCol = rel.columns[rel.pkAttr];
-    const items: { row: Row; tuple: Buffer; pk: ReturnType<typeof encodePk> }[] =
-      [];
+    const items: {
+      row: Row;
+      tuple: Buffer;
+      pk: ReturnType<typeof encodePk>;
+    }[] = [];
     for (const values of rows) {
       if (names.length !== values.length) {
         throw new Error("INSERT column count does not match VALUES");
@@ -849,10 +884,7 @@ export class SlabDb {
         const e = idx.keys[i];
         const keyLen = Number(e.keyLen);
         const key = Array.from(e.key as number[]).slice(0, keyLen);
-        if (
-          keyLen === pk.keyLen &&
-          key.every((b, j) => b === pk.key[j])
-        ) {
+        if (keyLen === pk.keyLen && key.every((b, j) => b === pk.key[j])) {
           hit = { pageNo: Number(e.pageNo), slot: Number(e.slot) };
           break;
         }
@@ -1131,7 +1163,11 @@ export class SlabDb {
     this.invalidateCatalog();
   }
 
-  async delegate(relOid: number, pageNo: number, pkAttr: number): Promise<void> {
+  async delegate(
+    relOid: number,
+    pageNo: number,
+    pkAttr: number
+  ): Promise<void> {
     await this.program.methods
       .delegate(this.ns, relOid, pageNo, pkAttr)
       .accounts({

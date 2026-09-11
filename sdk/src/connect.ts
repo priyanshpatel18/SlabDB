@@ -13,7 +13,7 @@ import {
 } from "./config";
 import { SlabDb, type Remaining } from "./db";
 import { ErProvider } from "./er-provider";
-import { resolveErTarget } from "./er-target";
+import { resolveErTargetForSlab } from "./er-target";
 import type { Slab as SlabProgram } from "./idl";
 import type { PageStore } from "./store";
 import type { Row, SqlParam } from "./types";
@@ -104,17 +104,20 @@ export async function connect(opts: ConnectOpts): Promise<SlabClient> {
   const ns = nsBytes(opts.ns);
   const owner = opts.owner ?? opts.wallet.publicKey;
   const autoDelegate = opts.autoDelegate !== false;
-  const target = await resolveErTarget({
-    router: opts.erRouter ?? DEFAULT_ER_ROUTER,
-    ws: opts.erWs ?? DEFAULT_ER_WS,
-  });
-  const remaining = opts.remainingAccounts ?? target.remainingAccounts;
   const wallet = asAnchorWallet(opts.wallet);
   const base = new Connection(opts.baseRpc ?? DEFAULT_BASE_RPC, {
     commitment: "confirmed",
     confirmTransactionInitialTimeout: 12_000,
     fetch: timedFetch,
   });
+  const target = await resolveErTargetForSlab({
+    base,
+    owner,
+    ns,
+    router: opts.erRouter ?? DEFAULT_ER_ROUTER,
+    ws: opts.erWs ?? DEFAULT_ER_WS,
+  });
+  const remaining = opts.remainingAccounts ?? target.remainingAccounts;
   const er = new Connection(target.erUrl, {
     commitment: "processed",
     confirmTransactionInitialTimeout: 12_000,
@@ -127,8 +130,14 @@ export async function connect(opts: ConnectOpts): Promise<SlabClient> {
     commitment: "processed",
     skipPreflight: true,
   });
-  const program = new Program(slabIdl as never, baseProvider) as Program<SlabProgram>;
-  const programEr = new Program(slabIdl as never, erProvider) as Program<SlabProgram>;
+  const program = new Program(
+    slabIdl as never,
+    baseProvider
+  ) as Program<SlabProgram>;
+  const programEr = new Program(
+    slabIdl as never,
+    erProvider
+  ) as Program<SlabProgram>;
   const db = new SlabDb({
     program,
     programEr,
