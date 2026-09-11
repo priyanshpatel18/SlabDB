@@ -1166,12 +1166,37 @@ fn is_irys_txid(txid: &[u8; TXID_LEN]) -> bool {
     if n < TXID_MIN_LEN {
         return false;
     }
-    txid[..n].iter().all(|b| {
-        matches!(
-            b,
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_'
-        )
-    }) && txid[n..].iter().all(|b| *b == 0)
+    let prefix_ok = txid[..n]
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || *b == b'-' || *b == b'_');
+    prefix_ok && txid[n..].iter().all(|b| *b == 0)
+}
+
+#[cfg(test)]
+mod irys_txid_tests {
+    use super::*;
+
+    fn pad(id: &str) -> [u8; TXID_LEN] {
+        let mut buf = [0u8; TXID_LEN];
+        buf[..id.len()].copy_from_slice(id.as_bytes());
+        buf
+    }
+
+    #[test]
+    fn accepts_url_safe_ascii() {
+        assert!(is_irys_txid(&pad(&"a".repeat(TXID_MIN_LEN))));
+        assert!(is_irys_txid(&pad(&"Z".repeat(TXID_LEN))));
+        assert!(is_irys_txid(&pad("abcDEF012-_abcDEF012-_abcDEF0123")));
+    }
+
+    #[test]
+    fn rejects_short_bad_charset_and_empty() {
+        assert!(!is_irys_txid(&[0u8; TXID_LEN]));
+        assert!(!is_irys_txid(&pad(&"a".repeat(TXID_MIN_LEN - 1))));
+        let mut plus = pad(&"a".repeat(TXID_MIN_LEN));
+        plus[0] = b'+';
+        assert!(!is_irys_txid(&plus));
+    }
 }
 
 fn key_eq(entry: &IndexEntry, key: &[u8; 32], key_len: u8) -> bool {
