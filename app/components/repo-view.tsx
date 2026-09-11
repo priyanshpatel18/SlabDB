@@ -12,6 +12,7 @@ import { FileSidebar } from "@/components/file-sidebar";
 import { FileTree } from "@/components/file-tree";
 import { GoToFile } from "@/components/go-to-file";
 import { RepoAbout } from "@/components/repo-about";
+import { RepoCliSetup } from "@/components/repo-cli-setup";
 import { RepoCrumb } from "@/components/repo-crumb";
 import { RepoFile } from "@/components/repo-file";
 import { RepoHeader } from "@/components/repo-header";
@@ -103,28 +104,27 @@ export function RepoView({
           atRoot ? (
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
               <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <div className="flex justify-end">
-                  <GoToFile uid={uid} repo={repo} files={access.files} />
-                </div>
-                {access.files.length === 0 ? (
-                  <Empty className="border border-dashed border-border py-12">
-                    <EmptyHeader>
-                      <EmptyTitle>This repository is empty</EmptyTitle>
-                      <EmptyDescription>
-                        Add files in folders. A README.md at the root is optional.
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                ) : (
-                  <FileTree
+                {listing.dirs.length === 0 && listing.files.length === 0 ? (
+                  <RepoCliSetup
                     uid={uid}
                     repo={repo}
-                    dir={dir}
-                    dirs={listing.dirs}
-                    files={listing.files}
-                    pfp={access.profile.pfp}
-                    commits={access.commits}
+                    canAddFile={access.own}
                   />
+                ) : (
+                  <>
+                    <div className="flex justify-end">
+                      <GoToFile uid={uid} repo={repo} files={access.files} />
+                    </div>
+                    <FileTree
+                      uid={uid}
+                      repo={repo}
+                      dir={dir}
+                      dirs={listing.dirs}
+                      files={listing.files}
+                      pfp={access.profile.pfp}
+                      commits={access.commits}
+                    />
+                  </>
                 )}
                 {readme ? (
                   <div id="readme">

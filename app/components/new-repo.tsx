@@ -20,6 +20,7 @@ import { SiteHeader } from "@/components/site-header";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PublicDataConsent } from "@/components/public-data-consent";
+import { RepoCliSetup } from "@/components/repo-cli-setup";
 import { useAccount } from "@/hooks/use-account";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
 import { shortAddr } from "@/lib/cluster";
@@ -290,14 +291,23 @@ export function NewRepo() {
                 className="mt-1 size-4 accent-kiln"
               />
               <span>
-                <span className="block text-sm font-medium">
-                Add a README.md
-              </span>
-              <span className="block text-sm text-muted-foreground">
-                Writes README.md as the first file. You can add more files after create.
-              </span>
+                <span className="block text-sm font-medium">Add a README.md</span>
+                <span className="block text-sm text-muted-foreground">
+                  {addReadme
+                    ? "Writes README.md as the first file. You can add more files after create."
+                    : "Leaves the repo empty. The page then shows CLI commands to push files."}
+                </span>
               </span>
             </label>
+
+            {!addReadme ? (
+              <RepoCliSetup
+                uid={account.profile?.uid || "your-uid"}
+                repo={
+                  !nameError && name.trim() ? name.trim().toLowerCase() : "hello-web"
+                }
+              />
+            ) : null}
 
             <PublicDataConsent
               id="new-repo-public"
