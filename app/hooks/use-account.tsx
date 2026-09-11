@@ -24,7 +24,12 @@ import {
 } from "@/lib/profile";
 import { readProfileCache, writeProfileCache, writeReadmeCache } from "@/lib/profile-cache";
 import { claimUsername } from "@/lib/username";
-import { isAccountFunded } from "@/lib/account-fund";
+import {
+  isAccountFunded,
+  isKeepFunded,
+  readHomeReady,
+  writeHomeReady,
+} from "@/lib/account-fund";
 import { loadSolLamports } from "@/lib/wallet-holdings";
 
 function asSigner(
@@ -71,7 +76,6 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [solLamports, setSolLamports] = useState<number | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [bootKey, setBootKey] = useState(0);
   const [boundId, setBoundId] = useState(signerId);
 
@@ -82,7 +86,6 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setSolLamports(null);
     setStatus("");
     setError(null);
-    setBusy(false);
   }
 
   useEffect(() => {
@@ -113,6 +116,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [signerId]);
 
   const funded = isAccountFunded(solLamports);
+  const canBoot =
+    isKeepFunded(solLamports) ||
+    isAccountFunded(solLamports) ||
+    Boolean(signerId && readHomeReady(signerId));
   const solRef = useRef(solLamports);
   const homeRef = useRef(home);
 
@@ -131,8 +138,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     if (homeRef.current) {
       return;
     }
+    if (!canBoot) {
+      return;
+    }
     let cancelled = false;
-    setBusy(true);
     void (async () => {
       try {
         const next = await openHome(signer, (msg) => {
@@ -152,6 +161,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         if (cancelled) {
           return;
         }
+        writeHomeReady(signerId);
         setHome(next);
         if (row) {
           writeProfileCache(signerId, row);
@@ -172,28 +182,23 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         }
         setHome(null);
         setProfile(readProfileCache(signerId));
-        if (!isAccountFunded(solRef.current)) {
+        if (!isKeepFunded(solRef.current) && !isAccountFunded(solRef.current)) {
           setError(null);
           setStatus("");
           return;
         }
         setError(err instanceof Error ? err.message : "Could not open home");
-      } finally {
-        if (!cancelled) {
-          setBusy(false);
-        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [signer, signerId, bootKey, funded]);
+  }, [signer, signerId, bootKey, canBoot]);
 
   const retry = useCallback(() => {
     setHome(null);
     setProfile(signerId ? readProfileCache(signerId) : null);
     setError(null);
-    setBusy(true);
     setBootKey((n) => n + 1);
   }, [signerId]);
 
@@ -246,7 +251,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       profile,
       solLamports,
       funded,
-      busy: Boolean(signer) && !home && !error && funded ? true : busy,
+      busy: Boolean(signer) && !home && !error && canBoot,
       status,
       error,
       retry,
@@ -255,7 +260,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       commitReadme,
     }),
     [
-      busy,
+      canBoot,
       commitReadme,
       error,
       funded,

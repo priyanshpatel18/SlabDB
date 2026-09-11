@@ -13,7 +13,9 @@ import {
 import { CLUSTER, SOL_FAUCET_URL, shortAddr } from "@/lib/cluster";
 import {
   MIN_ACCOUNT_SOL,
+  MIN_KEEP_SOL,
   needsCreateFund,
+  readHomeReady,
   remainingAccountSol,
 } from "@/lib/account-fund";
 import { useSlabWallet } from "@/hooks/use-slab-wallet";
@@ -30,14 +32,18 @@ function copyText(value: string) {
 export function FundGate({ children }: { children: React.ReactNode }) {
   const wallet = useSlabWallet();
   const { solLamports, home, profile, busy, refreshSol } = useAccount();
+  const hasAccount = Boolean(
+    home || profile?.uid || (wallet.address && readHomeReady(wallet.address))
+  );
   const locked = Boolean(
     wallet.connected &&
       !busy &&
-      needsCreateFund(solLamports, Boolean(home) || Boolean(profile?.uid))
+      needsCreateFund(solLamports, hasAccount)
   );
   const sol = solAmount(solLamports);
   const address = wallet.address;
-  const stillNeed = remainingAccountSol(solLamports);
+  const needSol = hasAccount ? MIN_KEEP_SOL : MIN_ACCOUNT_SOL;
+  const stillNeed = remainingAccountSol(solLamports, hasAccount);
 
   return (
     <div className="relative min-h-dvh">
@@ -61,13 +67,11 @@ export function FundGate({ children }: { children: React.ReactNode }) {
           className="max-h-[90dvh] overflow-y-auto sm:max-w-lg"
         >
           <DialogHeader>
-            <DialogTitle>Add {MIN_ACCOUNT_SOL} SOL to continue</DialogTitle>
+            <DialogTitle>Add {needSol} SOL to continue</DialogTitle>
             <DialogDescription>
-              You signed in, so Slab created an embedded Solana wallet. You must
-              send at least {MIN_ACCOUNT_SOL} SOL to that wallet before Slab
-              creates your on-chain account. After that, this check goes away.
-              This SOL pays Solana and Irys network fees. Slab does not take it
-              as a product fee.
+              {hasAccount
+                ? `Your on-chain account exists. Keep at least ${MIN_KEEP_SOL} SOL in this wallet for Solana and Irys network fees. Slab does not take it as a product fee.`
+                : `You signed in, so Slab created an embedded Solana wallet. Send at least ${MIN_ACCOUNT_SOL} SOL before Slab creates your on-chain account. After that, only ${MIN_KEEP_SOL} SOL is required. This SOL pays Solana and Irys network fees. Slab does not take it as a product fee.`}
             </DialogDescription>
           </DialogHeader>
           {address ? (
@@ -79,13 +83,12 @@ export function FundGate({ children }: { children: React.ReactNode }) {
                   {CLUSTER} cluster.
                 </li>
                 <li>
-                  Paste the address and request at least {MIN_ACCOUNT_SOL} SOL.
-                  If the faucet sends 1 SOL, request again until the balance is{" "}
-                  {MIN_ACCOUNT_SOL} SOL.
+                  Paste the address and request SOL until the balance is{" "}
+                  {needSol} SOL or more.
                 </li>
                 <li>
                   Return here. This screen stays open until the balance is{" "}
-                  {MIN_ACCOUNT_SOL} SOL or more. We check every few seconds.
+                  {needSol} SOL or more. We check every few seconds.
                 </li>
               </ol>
               <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
@@ -106,7 +109,7 @@ export function FundGate({ children }: { children: React.ReactNode }) {
               <p className="text-sm text-foreground" aria-live="polite">
                 Balance:{" "}
                 {sol == null ? "checking" : `${formatSol(sol)} SOL`} of{" "}
-                {MIN_ACCOUNT_SOL} SOL.
+                {needSol} SOL.
                 {sol != null && stillNeed > 0
                   ? ` Still need ${formatSol(stillNeed)} SOL.`
                   : ""}

@@ -27,6 +27,8 @@ export type SlabWallet = {
   signAllTransactions?: <T extends Transaction | VersionedTransaction>(
     txs: T[]
   ) => Promise<T[]>;
+  /** Required for Irys web uploads (`@irys/web-upload-solana`). */
+  signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
 };
 
 export type ConnectOpts = {
